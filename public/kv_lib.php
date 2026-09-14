@@ -44,6 +44,18 @@ function kv_url(string $path = ''): string
     return KV_BASE . '/' . ltrim($path, '/');
 }
 
+
+/** 商品画像のURL。自前に取り込んだものは相対パス（img/…）で入っている。
+ *  取り込めなかった分は旧サイトの絶対URLのまま残しているので、そのまま返す。 */
+function kv_img(?string $u): string
+{
+    $u = (string)$u;
+    if ($u === '') { return ''; }
+    if (strpos($u, 'http') === 0) { return $u; }
+    return kv_url($u);
+}
+
+
 function kv_e($s): string
 {
     return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');

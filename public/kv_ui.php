@@ -124,7 +124,7 @@ function kv_card(array $p): void
     $incl = kv_price_incl($p);
     echo '<div class="card">'
        . '<a class="thumb" href="' . kv_url('product/' . (int)$p['id']) . '">'
-       . ($p['image_url'] ? '<img src="' . kv_e($p['image_url']) . '" alt="" loading="lazy">' : '')
+       . ($p['image_url'] ? '<img src="' . kv_e(kv_img($p['image_url'])) . '" alt="" loading="lazy">' : '')
        . '</a><div class="b">'
        . '<a class="nm" href="' . kv_url('product/' . (int)$p['id']) . '">' . kv_e($p['name']) . '</a>'
        . ($p['model_number'] ? '<div class="mn">' . kv_e($p['model_number']) . '</div>' : '')

@@ -218,7 +218,7 @@ function kv_page_product(int $id): void
        . ($cat ? ' › <a href="' . kv_url('product-list/' . (int)$cat['id']) . '">' . kv_e($cat['name']) . '</a>' : '')
        . '</nav>';
     echo '<h1>' . kv_e($p['name']) . '</h1><div class="pd">';
-    echo '<div class="img">' . ($p['image_url'] ? '<img src="' . kv_e($p['image_url']) . '" alt="">' : '') . '</div>';
+    echo '<div class="img">' . ($p['image_url'] ? '<img src="' . kv_e(kv_img($p['image_url'])) . '" alt="">' : '') . '</div>';
     echo '<div><div class="panel">';
     if ($p['model_number']) { echo '<p class="src">型番 ' . kv_e($p['model_number']) . '</p>'; }
     if ($incl === null) {
