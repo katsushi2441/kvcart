@@ -25,12 +25,15 @@ require __DIR__ . '/kv_cart.php';
 // 「headers already sent」でクッキーが出ず、CSRFが毎回外れる（実測で踏んだ）。
 kv_session();
 
-$path = $_SERVER['PATH_INFO'] ?? '';
+// パスの取り出し。**環境によって PATH_INFO が来たり来なかったりする**ので、
+// どちらから取っても最後に必ず KV_BASE を剥がす。
+// （PATH_INFO があるときに剥がし忘れて、サブパス配置だけ全部404になった。2026-09-14）
+$path = (string)($_SERVER['PATH_INFO'] ?? '');
 if ($path === '' && isset($_SERVER['REQUEST_URI'])) {
-    // .htaccess の rewrite で来た場合は REQUEST_URI から KV_BASE を取り除く
-    $u = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';
-    if (KV_BASE !== '' && strpos($u, KV_BASE) === 0) { $u = substr($u, strlen(KV_BASE)); }
-    $path = $u;
+    $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';
+}
+if (KV_BASE !== '' && strpos($path, KV_BASE) === 0) {
+    $path = substr($path, strlen(KV_BASE));
 }
 $path = '/' . trim($path, '/');
 $page = max(1, (int)($_GET['p'] ?? 1));

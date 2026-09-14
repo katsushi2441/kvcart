@@ -46,7 +46,7 @@ MAKERS = {
 }
 
 SCHEMA = """
-PRAGMA journal_mode=WAL;
+-- レンタルサーバーで読み取り専用エラーになるため WAL は使わない（DELETE のまま）
 
 -- 商品。id は**おちゃのこネットの商品ID**をそのまま使う（URL互換の要）
 CREATE TABLE IF NOT EXISTS products (

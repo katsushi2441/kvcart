@@ -31,6 +31,10 @@ function kv_db(): PDO
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ]);
         $pdo->exec('PRAGMA busy_timeout=5000');
+        // **レンタルサーバーでは WAL を使わない。** WAL は -wal / -shm をディレクトリに
+        // 作るので、書き込み権限が無いと読むだけで "attempt to write a readonly database"
+        // になる（heteml で実際に踏んだ。2026-09-14）。DELETE ジャーナルなら読みだけで済む。
+        try { $pdo->exec('PRAGMA journal_mode=DELETE'); } catch (PDOException $e) { /* 読み取り専用でも続行 */ }
     }
     return $pdo;
 }

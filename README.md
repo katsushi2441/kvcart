@@ -57,3 +57,25 @@ public/kvcart_mcp.php MCP（1ファイル・stdio）
 public/kv_data/       SQLite・画像（Web非公開）
 scripts/import_ocnk.py おちゃのこAPI → SQLite
 ```
+
+## デモ
+
+https://exbridge.jp/exdirect/ （noindex。本番は exdirect.net へ移す）
+
+管理画面は `/exdirect/admin.php`。
+
+## MCP（バイブコーディングで運用する）
+
+```bash
+claude mcp add kvcart -- php /path/to/public/kvcart_mcp.php
+```
+
+8ツール。`kvcart_search_products` / `kvcart_get_product` / `kvcart_upsert_product` /
+`kvcart_makers` / `kvcart_orders` / `kvcart_get_order` / `kvcart_set_order_flag` / `kvcart_stats`。
+
+instructions に **「商品IDは /product/<id> というURLそのもの。既存商品のIDを変えてはいけない」**
+と明記してある。金額・在庫は利用者が指示した値だけを書き、推測で埋めない約束。
+
+## 移行手順
+
+`docs/MIGRATION.md` を見る。ドメイン切替は `KV_BASE` を `''` にするだけ。
