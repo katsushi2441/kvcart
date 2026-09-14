@@ -1,0 +1,27 @@
+# Kurage Vibe-Cart — レンタルサーバー用。FTPで置くだけで動く。
+
+# heteml の既定は PHP 5.6。この1行が無いと型宣言も ?? も使えない（実測 2026-09-14）
+AddHandler php8.2-script .php
+
+# おちゃのこネットと同じURLを出す。/product/11366 を index.php に渡す。
+# **末尾スラッシュを足したり外したりしない**（旧URLと1文字でも変わるとブックマークが切れる）
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+# データディレクトリは絶対に外へ出さない
+RewriteRule ^kv_data/ - [F,L]
+# 実在するファイル・ディレクトリはそのまま（画像やCSSを置いたとき用）
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+# それ以外は全部フロントへ
+RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>
+
+# SQLite と設定を直接読ませない（rewrite が効かない環境の保険）
+<FilesMatch "\.(sqlite|sqlite-wal|sqlite-shm)$">
+  Require all denied
+</FilesMatch>
+<Files "kv_config.php">
+  Require all denied
+</Files>

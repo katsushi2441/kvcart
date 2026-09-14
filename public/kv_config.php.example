@@ -1,0 +1,38 @@
+<?php
+/**
+ * Kurage Vibe-Cart — 設定。**このファイルは Git に入れない**（kv_config.php にコピーして使う）。
+ *
+ * ドメインを移すときは KV_BASE を '' にするだけでよい。
+ *   デモ    : https://exbridge.jp/exdirect/  → KV_BASE = '/exdirect'
+ *   本番    : https://www.exdirect.net/      → KV_BASE = ''
+ * どちらでも /product/11366 の形は同じなので、ブックマークがそのまま生きる。
+ */
+declare(strict_types=1);
+
+define('KV_BASE', '/exdirect');           // 本番は ''
+
+$KV_SHOP = [
+    'name'     => 'X-Direct',
+    'tagline'  => '仕事に役立つアイテムを直送・格安で',
+    'company'  => '株式会社エクスブリッジ',
+    'email'    => 'info@exbridge.jp',
+    'tel'      => '',
+    'address'  => '',
+    // 銀行振込の案内（注文完了画面とメールに出す）
+    'bank'     => "銀行名・支店名・口座種別・口座番号・口座名義をここに書きます。\n振込手数料はお客様のご負担でお願いします。",
+    'ship_note'=> '送料は商品ページの表記に従います。',
+];
+
+// Stripe（アカウントを作ったら入れる）。**空のままなら決済ボタンを出さない。**
+// kbilling と同じ考え方で、鍵が無いのにボタンだけ出して「押せない」状態を作らない。
+$KV_STRIPE = [
+    'publishable' => '',
+    'secret'      => '',
+    'webhook'     => '',
+];
+
+// 管理画面のログイン。パスワードは password_hash() の値を入れる
+$KV_ADMIN = [
+    'user' => 'admin',
+    'hash' => '',   // 例: password_hash('ここにパスワード', PASSWORD_DEFAULT) の出力
+];

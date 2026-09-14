@@ -1,0 +1,12 @@
+public/kv_config.php
+public/kv_data/*.sqlite
+public/kv_data/*.sqlite-*
+public/kv_data/images/
+.env
+*.env
+.env.*
+*.bak
+*.bak-*
+*.env.bak*
+__pycache__/
+outputs/
