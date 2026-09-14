@@ -317,8 +317,17 @@ function kv_page_static(string $key, string $path = ''): void
         return;
     }
     kv_head($pg['title'], $pg['desc'] ?? '', $path);
-    echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a> › '
-       . kv_e($pg['title']) . '</nav><h1>' . kv_e($pg['title']) . '</h1>'
-       . '<div class="panel desc">' . $pg['html'] . '</div></div>';
+    echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">ホーム</a> ｜ '
+       . kv_e($pg['title']) . '</nav>';
+    if (($pg['layout'] ?? '') === 'ocnk') {
+        // 現行 exdirect.net と同じ見出し帯＋本文枠（.ptitle / .pmiddle）
+        // 帯そのものを h1 にする（見た目は現行どおり・見出しは1つだけ）
+        echo '<h1 class="ptitle">' . kv_e($pg['title']) . '</h1>'
+           . '<div class="pmiddle">' . $pg['html'] . '</div>';
+    } else {
+        echo '<h1>' . kv_e($pg['title']) . '</h1>'
+           . '<div class="panel desc">' . $pg['html'] . '</div>';
+    }
+    echo '</div>';
     kv_footer();
 }

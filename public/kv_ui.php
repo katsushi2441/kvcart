@@ -107,6 +107,36 @@ footer.site .inner{max-width:1080px;margin:0 auto;padding:20px 16px;font-size:13
 .formtbl input[type=text],.formtbl input[type=email],.formtbl input[type=tel],.formtbl select,.formtbl textarea{width:100%;padding:9px 10px;font-size:16px;border:2px solid #cfdae4;border-radius:8px}
 .formtbl .hint{font-size:12px;color:#6b7a86;margin-top:4px}
 @media(max-width:640px){.formtbl th,.formtbl td{display:block;width:auto;border-bottom:0}.formtbl tr:last-child td{border-bottom:1px solid #e3e9ec}}
+
+/* --- おちゃのこネットの固定ページと同じ見え方にする ---
+   /info /help は現行 exdirect.net の link_shop_table / help_page_N の作りに合わせる。
+   色も向こうの値をそのまま使う（見出し帯 #1b7890・項目列 #BFE0F0 に文字 #336699・
+   囲み #FFFFF0）。移行してもお客様が「同じ店」と分かるようにするため。 */
+h1.ptitle{font-size:15px;margin:0}
+.ptitle{background:#1b7890;color:#fff;font-size:15px;font-weight:700;padding:11px 18px;border-radius:8px 8px 0 0}
+.pmiddle{background:#fff;border:1px solid #e5ebf1;border-top:0;border-radius:0 0 8px 8px;padding:8px 0 16px;font-size:14px;line-height:1.9}
+.pmiddle a{color:#1b6fa8}
+/* /info の2列表（左=項目・右=内容） */
+.shoptbl{width:calc(100% - 28px);border-collapse:collapse;margin:10px 14px}
+.shoptbl th::before{content:"❯";margin-right:4px}
+.shoptbl th{width:180px;background:#BFE0F0;color:#336699;font-size:14px;font-weight:700;text-align:left;vertical-align:top;padding:14px 12px;border-bottom:2px solid #fff;border-right:2px solid #fff}
+.shoptbl td{background:#F5F5F5;padding:14px;border-bottom:2px solid #fff;vertical-align:top}
+.shoptbl ul{margin:0;padding-left:1.2em}
+@media(max-width:640px){.shoptbl{width:auto;margin:10px}.shoptbl thead,.shoptbl tbody,.shoptbl tr,.shoptbl th,.shoptbl td{display:block;width:auto}.shoptbl th{border-right:0;border-bottom:0}}
+/* /help のセクション（見出し帯 → 中身 → 区切り） */
+.sechead{color:#336699;font-size:15px;font-weight:700;margin:16px 20px 0;padding:8px 5px 6px 15px}
+.secbody{margin:0 20px;padding:10px 10px 0}
+.secfoot{height:10px;background:#f9f7f4;margin:0 20px}
+.subhead{font-size:14px;font-weight:700;border-bottom:1px solid #b5ccd2;margin:14px 0 6px;padding:8px 0 6px 12px}
+.guide{padding:0 10px 8px}
+.guide>b{display:block;margin-bottom:4px}
+.pbox{background:#FFFFF0;border:1px solid #D4D0C8;margin:6px 6px 10px 0;padding:12px}
+.pbox b{color:#336699}
+.colon{padding:0 6px}
+.warn{color:#d0021b;font-weight:700}
+.taxtbl{border-collapse:collapse;margin:6px 10px 10px}
+.taxtbl td{background:#FFFFF0;border:1px solid #D4D0C8;padding:8px 18px}
+@media(max-width:640px){.sechead,.secbody,.secfoot{margin-left:10px;margin-right:10px}.secbody{padding:10px 0 0}}
 </style>';
 }
 
