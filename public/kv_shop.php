@@ -26,8 +26,10 @@ function kv_cfg(): array
         $c = [
             'shop' => $KV_SHOP + [
                 'name' => 'X-Direct', 'tagline' => '仕事に役立つアイテムを直送・格安で',
-                'company' => '株式会社エクスブリッジ', 'email' => 'info@exbridge.jp',
-                'tel' => '', 'address' => '',
+                'company' => '株式会社エクスブリッジ', 'email' => 'info@exdirect.net',
+                'tel' => '050-5436-6141', 'fax' => '052-388-7758',
+                'manager' => '小嶋　篤',
+                'address' => '名古屋市瑞穂区内浜町34-9 宝第二スカイハイツ305',
                 'bank' => '振込先はご注文後にメールでご案内します。',
                 'ship_note' => '送料は商品ページの表記に従います。',
             ],

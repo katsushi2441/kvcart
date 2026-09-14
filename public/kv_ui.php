@@ -91,6 +91,22 @@ footer.site{border-top:1px solid #e5ebf1;background:#fff;margin-top:40px}
 footer.site .inner{max-width:1080px;margin:0 auto;padding:20px 16px;font-size:13px;color:#5b6b76}
 .makers{display:flex;flex-wrap:wrap;gap:8px;font-size:13.5px}
 .makers a{background:#fff;border:1px solid #dfe8ee;border-radius:99px;padding:6px 13px;text-decoration:none}
+
+/* おちゃのこネットと同じ購入手続きのステップ帯（STEP1 購入者 → 2 お届け先・お支払い → 3 確認 → 4 完了） */
+.steps{display:flex;gap:0;margin:0 0 22px;font-size:13px;overflow-x:auto}
+.steps .s{flex:1 1 0;min-width:120px;text-align:center;padding:10px 6px;background:#eef3f6;color:#6b7a86;border-right:2px solid #fff;position:relative}
+.steps .s b{display:block;font-size:11.5px;letter-spacing:.06em}
+.steps .s.now{background:#0a9a8f;color:#fff}
+.steps .s.done{background:#d7ece9;color:#0a726b}
+.steps .s:last-child{border-right:0}
+/* 必須マーク（おちゃのこネットは「！」マーク） */
+.req{display:inline-block;background:#bf0000;color:#fff;font-size:11px;font-weight:700;border-radius:3px;padding:1px 6px;margin-left:6px;vertical-align:middle}
+.formtbl{width:100%;border-collapse:collapse;font-size:14px}
+.formtbl th{background:#f5f8f9;border:1px solid #e3e9ec;padding:12px;text-align:left;width:34%;white-space:nowrap;vertical-align:top}
+.formtbl td{border:1px solid #e3e9ec;padding:10px 12px}
+.formtbl input[type=text],.formtbl input[type=email],.formtbl input[type=tel],.formtbl select,.formtbl textarea{width:100%;padding:9px 10px;font-size:16px;border:2px solid #cfdae4;border-radius:8px}
+.formtbl .hint{font-size:12px;color:#6b7a86;margin-top:4px}
+@media(max-width:640px){.formtbl th,.formtbl td{display:block;width:auto;border-bottom:0}.formtbl tr:last-child td{border-bottom:1px solid #e3e9ec}}
 </style>';
 }
 
@@ -109,10 +125,15 @@ function kv_header(): void
 
 function kv_footer(): void
 {
+    // 規約・プライバシーポリシーは **全ページから1クリックで開ける**ようにする
     echo '<footer class="site"><div class="inner">'
-       . '<p><a href="' . kv_url('info') . '">特定商取引法に基づく表記</a>'
+       . '<p><a href="' . kv_url('info') . '">特定商取引法表示</a>'
        . ' ・ <a href="' . kv_url('help') . '">ご利用案内</a>'
-       . ' ・ <a href="' . kv_url('contact') . '">お問い合わせ</a>'
+       . ' ・ <a href="' . kv_url('terms') . '">ご利用規約</a>'
+       . ' ・ <a href="' . kv_url('privacy') . '">プライバシーポリシー</a>'
+       . ' ・ <a href="' . kv_url('page/16') . '">よくあるご質問</a>'
+       . ' ・ <a href="' . kv_url('contact') . '">お問い合わせ</a></p>'
+       . '<p><a href="' . kv_url('page/1') . '">' . kv_e(kv_shop('name')) . 'について</a>'
        . ' ・ <a href="' . kv_url('makers') . '">メーカー一覧</a></p>'
        . '<p>&copy; ' . date('Y') . ' ' . kv_e(kv_shop('company')) . '</p>'
        . '</div></footer></body></html>';
@@ -144,4 +165,30 @@ function kv_pager(array $r, string $base): void
     }
     echo '<span class="src" style="border:0;background:none">全' . number_format($r['total']) . '件</span>';
     echo '</div>';
+}
+
+/**
+ * 購入手続きのステップ帯。**おちゃのこネットと同じ4段**にする。
+ *   STEP 1 購入者 → STEP 2 お届け先・お支払い → STEP 3 確認 → STEP 4 完了
+ * （www.exdirect.net の cart_step_table を実測して合わせた。2026-09-14）
+ */
+function kv_steps(int $now): void
+{
+    $steps = [1 => '購入者', 2 => 'お届け先・お支払い', 3 => '確認', 4 => '完了'];
+    echo '<div class="steps">';
+    foreach ($steps as $i => $label) {
+        $cls = $i === $now ? ' now' : ($i < $now ? ' done' : '');
+        echo '<div class="s' . $cls . '"><b>STEP ' . $i . '</b>' . kv_e($label) . '</div>';
+    }
+    echo '</div>';
+}
+
+/** 都道府県。おちゃのこネットと同じくプルダウンで選ばせる。 */
+function kv_prefs(): array
+{
+    return ['北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県',
+            '埼玉県','千葉県','東京都','神奈川県','新潟県','富山県','石川県','福井県','山梨県','長野県',
+            '岐阜県','静岡県','愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県','和歌山県',
+            '鳥取県','島根県','岡山県','広島県','山口県','徳島県','香川県','愛媛県','高知県','福岡県',
+            '佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県'];
 }

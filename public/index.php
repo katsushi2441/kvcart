@@ -6,8 +6,10 @@
  *   /product/<数値ID>     商品詳細（IDは移行元のまま）
  *   /product-group/<ID>   グループ（メーカー）
  *   /product-list/<ID>    カテゴリ
- *   /page/<n>             固定ページ
+ *   /page/<n>             固定ページ（/page/1 店の案内・/page/16 FAQ）
  *   /info /help /contact  固定ページ
+ *   /terms /privacy       ご利用規約・プライバシーポリシー（現行サイトに単独ページが無いので新設）
+ *   /manual               店の運営マニュアル（noindex・管理画面から開く）
  *
  * 移行しなかった商品は **404を返さない**。「取り扱いを終了しました」を出して、
  * 同じメーカー・同じカテゴリの現行商品へ案内する（40,922件ぶんのブックマークを落とさない）。
@@ -20,6 +22,7 @@ require __DIR__ . '/kv_lib.php';
 require __DIR__ . '/kv_ui.php';
 require __DIR__ . '/kv_order.php';
 require __DIR__ . '/kv_cart.php';
+require __DIR__ . '/kv_pages.php';
 
 // **セッションは出力より前に始める。** kv_head() を呼んだ後に session_start() すると
 // 「headers already sent」でクッキーが出ず、CSRFが毎回外れる（実測で踏んだ）。
@@ -56,17 +59,26 @@ function kv_route(string $path, int $page): void
     // ---- カテゴリ ----
     if (preg_match('#^/product-list/(\d+)$#', $path, $m)) { kv_page_category((int)$m[1], $page); return; }
     // ---- 固定ページ ----
-    if (preg_match('#^/page/(\d+)$#', $path, $m)) { kv_page_static('page' . $m[1]); return; }
+    if (preg_match('#^/page/(\d+)$#', $path, $m)) { kv_page_static('page' . $m[1], $path); return; }
     switch ($path) {
         case '/':         kv_page_top(); return;
         case '/makers':   kv_page_makers(); return;
         case '/search':   kv_page_search($page); return;
-        case '/cart':     kv_page_cart(); return;
-        case '/checkout': kv_page_checkout(); return;
-        case '/thanks':   kv_page_thanks(); return;
+        // 購入手続き。**おちゃのこネットと同じURL・同じ4段**にする
+        case '/cart':          kv_page_cart(); return;
+        case '/cart/customer': kv_page_customer(); return;   // STEP 1 購入者
+        case '/cart/delivery': kv_page_delivery(); return;   // STEP 2 お届け先・お支払い
+        case '/cart/confirm':  kv_page_confirm(); return;    // STEP 3 確認
+        case '/cart/complete': kv_page_complete(); return;   // STEP 4 完了
+        // 旧実装のURL。踏まれても落とさずカートへ返す
+        case '/checkout':
+        case '/thanks':        header('Location: ' . kv_url('cart')); return;
+        case '/contact':  kv_page_contact(); return;
         case '/info':
         case '/help':
-        case '/contact':  kv_page_static(ltrim($path, '/')); return;
+        case '/terms':
+        case '/privacy':  kv_page_static(ltrim($path, '/'), $path); return;
+        case '/manual':   kv_page_manual(); return;
     }
     // メーカーのslugでも引けるようにしておく（exbridge.jp/xdirect/ からの導線）
     if (preg_match('#^/maker/([a-z0-9_-]+)$#', $path, $m)) {
@@ -289,50 +301,24 @@ function kv_page_retired(int $id): void
     kv_footer();
 }
 
-function kv_page_static(string $key): void
+function kv_page_static(string $key, string $path = ''): void
 {
+    // canonical は **リクエストされたURLそのもの**を使う。key ('page16') を
+    // そのまま '/' に足すと /page16 という存在しないURLを canonical に書いてしまう。
+    $path = $path !== '' ? $path : '/' . $key;
     $pages = kv_static_pages();
     $pg = $pages[$key] ?? null;
     if (!$pg) {
         http_response_code(404);
-        kv_head('ページが見つかりません', '', '/' . $key, ['noindex' => true]);
-        echo '<div class="wrap"><h1>ページが見つかりません</h1></div>';
+        kv_head('ページが見つかりません', '', $path, ['noindex' => true]);
+        echo '<div class="wrap"><h1>ページが見つかりません</h1>'
+           . '<p><a class="btn" href="' . kv_url('') . '">トップへ</a></p></div>';
         kv_footer();
         return;
     }
-    kv_head($pg['title'], $pg['desc'] ?? '', '/' . $key);
+    kv_head($pg['title'], $pg['desc'] ?? '', $path);
     echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a> › '
        . kv_e($pg['title']) . '</nav><h1>' . kv_e($pg['title']) . '</h1>'
        . '<div class="panel desc">' . $pg['html'] . '</div></div>';
     kv_footer();
-}
-
-/** 固定ページ。おちゃのこネットの /info /help /page/N を引き継ぐ。 */
-function kv_static_pages(): array
-{
-    $bank = nl2br(kv_e(kv_shop('bank')));
-    return [
-        'info' => ['title' => '特定商取引法に基づく表記', 'desc' => '販売事業者・支払方法・送料・返品について。',
-            'html' => '<table class="t">'
-                . '<tr><th>販売事業者</th><td>' . kv_e(kv_shop('company')) . '</td></tr>'
-                . '<tr><th>所在地</th><td>' . kv_e(kv_shop('address')) . '</td></tr>'
-                . '<tr><th>連絡先</th><td>' . kv_e(kv_shop('email')) . ' ' . kv_e(kv_shop('tel')) . '</td></tr>'
-                . '<tr><th>支払方法</th><td>銀行振込（前払い）' . (kv_stripe_ready() ? '／クレジットカード' : '') . '</td></tr>'
-                . '<tr><th>商品の引渡時期</th><td>ご入金確認後に発送します。お取り寄せ品は納期をご案内します。</td></tr>'
-                . '<tr><th>返品・交換</th><td>商品の不良・誤配送は当社負担で交換します。お客様都合の返品は未開封のものに限ります。</td></tr>'
-                . '<tr><th>送料</th><td>' . kv_e(kv_shop('ship_note')) . '</td></tr></table>'],
-        'help' => ['title' => 'ご利用案内', 'desc' => 'ご注文からお届けまでの流れ。',
-            'html' => '<h2>ご注文の流れ</h2><ol>'
-                . '<li>商品をカートに入れて、お客様情報を入力します</li>'
-                . '<li>注文確認メールが届きます（振込先を記載します）</li>'
-                . '<li>お振込みを確認したら発送します</li></ol>'
-                . '<h2>お支払い</h2><p>銀行振込（前払い）です。'
-                . (kv_stripe_ready() ? 'クレジットカードもご利用いただけます。' : '')
-                . '</p><div class="panel">' . $bank . '</div>'],
-        'contact' => ['title' => 'お問い合わせ', 'desc' => '商品・納期・お見積りについて。',
-            'html' => '<p>商品の在庫・納期・お見積りはお気軽にどうぞ。'
-                . '掲載していない商品もお取り寄せできる場合があります。</p>'
-                . '<p>メール: <a href="mailto:' . kv_e(kv_shop('email')) . '">' . kv_e(kv_shop('email')) . '</a>'
-                . (kv_shop('tel') ? '<br>電話: ' . kv_e(kv_shop('tel')) : '') . '</p>'],
-    ];
 }

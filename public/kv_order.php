@@ -26,6 +26,8 @@ function kv_order_schema(): void
       code TEXT UNIQUE NOT NULL,
       created_at TEXT NOT NULL,
       name TEXT, company TEXT, email TEXT, tel TEXT, zip TEXT, address TEXT, note TEXT,
+      name_kana TEXT, department TEXT, fax TEXT, dm INTEGER DEFAULT 0,
+      ship_to TEXT, ship_name TEXT, ship_zip TEXT, ship_address TEXT, ship_tel TEXT,
       payment TEXT,                 -- bank / stripe
       subtotal INTEGER, tax INTEGER, shipping INTEGER DEFAULT 0, total INTEGER,
       f_received INTEGER DEFAULT 0, f_paid INTEGER DEFAULT 0,
@@ -54,6 +56,13 @@ function kv_order_schema(): void
     ");
 }
 
+/** 購入者の入力から、保存する住所文字列を組み立てる（都道府県＋市区町村＋番地＋建物）。 */
+function kv_join_address(array $p, string $prefix = ''): string
+{
+    $k = fn($n) => trim((string)($p[$prefix . $n] ?? ''));
+    return trim($k('pref') . $k('address1') . $k('address2') . ' ' . $k('address3'));
+}
+
 function kv_order_create(array $cart, array $post): int
 {
     kv_order_schema();
@@ -61,13 +70,23 @@ function kv_order_create(array $cart, array $post): int
     $now = date('Y-m-d H:i:s');
     $code = date('Ymd') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
     $db->beginTransaction();
-    $st = $db->prepare('INSERT INTO orders (code,created_at,name,company,email,tel,zip,address,note,'
-        . 'payment,subtotal,tax,total,f_received,received_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)');
+    $ship_other = ($post['ship_to'] ?? 'same') === 'other';
+    $st = $db->prepare('INSERT INTO orders (code,created_at,name,name_kana,company,department,email,tel,fax,'
+        . 'zip,address,note,dm,ship_to,ship_name,ship_zip,ship_address,ship_tel,'
+        . 'payment,subtotal,tax,total,f_received,received_at)'
+        . ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)');
     $st->execute([$code, $now,
-        trim((string)($post['name'] ?? '')), trim((string)($post['company'] ?? '')),
+        trim((string)($post['name'] ?? '')), trim((string)($post['name_kana'] ?? '')),
+        trim((string)($post['company'] ?? '')), trim((string)($post['department'] ?? '')),
         trim((string)($post['email'] ?? '')), trim((string)($post['tel'] ?? '')),
-        trim((string)($post['zip'] ?? '')), trim((string)($post['address'] ?? '')),
-        trim((string)($post['note'] ?? '')),
+        trim((string)($post['fax'] ?? '')),
+        trim((string)($post['zip'] ?? '')), kv_join_address($post),
+        trim((string)($post['note'] ?? '')), (string)($post['dm'] ?? '0') === '1' ? 1 : 0,
+        $ship_other ? 'other' : 'same',
+        $ship_other ? trim((string)($post['s_name'] ?? '')) : '',
+        $ship_other ? trim((string)($post['s_zip'] ?? '')) : '',
+        $ship_other ? kv_join_address($post, 's_') : '',
+        $ship_other ? trim((string)($post['s_tel'] ?? '')) : '',
         ($post['payment'] ?? 'bank') === 'stripe' && kv_stripe_ready() ? 'stripe' : 'bank',
         $cart['subtotal'], $cart['tax'], $cart['total'], $now]);
     $oid = (int)$db->lastInsertId();

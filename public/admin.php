@@ -78,7 +78,8 @@ function kv_admin_nav(string $now): void
         $cls = $k === $now ? 'btn' : 'btn gray';
         echo '<a class="' . $cls . '" href="?a=' . $k . '">' . kv_e($label) . '</a>';
     }
-    echo '<a class="btn gray" href="' . kv_url('') . '" target="_blank" rel="noopener">店を見る</a>'
+    echo '<a class="btn gray" href="' . kv_url('manual') . '" target="_blank" rel="noopener">運営マニュアル</a>'
+       . '<a class="btn gray" href="' . kv_url('') . '" target="_blank" rel="noopener">店を見る</a>'
        . '<a class="btn gray" href="?logout=1">ログアウト</a></div>';
 }
 
