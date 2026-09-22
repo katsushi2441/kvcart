@@ -166,6 +166,7 @@ function kv_footer(): void
        . '<p><a href="' . kv_url('page/1') . '">' . kv_e(kv_shop('name')) . 'について</a>'
        . ' ・ <a href="' . kv_url('makers') . '">メーカー一覧</a></p>'
        . '<p>&copy; ' . date('Y') . ' ' . kv_e(kv_shop('company')) . '</p>'
+       . ((($_SERVER['HTTP_HOST'] ?? '') === 'exbridge.jp') ? '<p style="font-size:13px">この店は Kurage Vibe-Cart のデモです。<a href="https://kappstore.exbridge.jp/app.php?id=754c7ddb5f1c8f26&amp;ref=exdirect" target="_blank" rel="noopener">PHPだけで動くECをオンプレミスで（商品ページ）</a></p>' : '')
        . '</div></footer></body></html>';
 }
 
