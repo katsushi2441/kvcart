@@ -131,6 +131,53 @@ function kv_stripe_send_invoice(int $oid): array
     return $inv;
 }
 
+/**
+ * 注文の確定と同時にカードで払ってもらう（Stripe Checkout）。2026-11-16 ユーザー指示で請求書方式から切り替え。
+ * キャンセル・減額は Stripe のダッシュボードで返金（全額・一部）、増額は kv_stripe_send_invoice() で差額を請求する。
+ * 支払い方法の種類は指定しない（ダッシュボードの設定に任せる）。入金の反映は webhook だけで行う。
+ */
+function kv_stripe_checkout(int $oid): array
+{
+    $o = kv_order($oid);
+    if (!$o) { throw new RuntimeException('受注が見つかりません'); }
+    if ((int)$o['f_paid'] === 1) { throw new RuntimeException('この受注はお支払い済みです'); }
+    $lines = [];
+    foreach (kv_order_items($oid) as $it) {
+        $lines[] = ['price_data' => ['currency' => 'jpy', 'unit_amount' => (int)$it['unit'],
+                    'product_data' => ['name' => mb_strimwidth($it['name'] . ($it['model_number'] ? ' [' . $it['model_number'] . ']' : ''), 0, 240, '…')]],
+                    'quantity' => (int)$it['qty']];
+    }
+    if ((int)$o['tax'] > 0) {
+        $lines[] = ['price_data' => ['currency' => 'jpy', 'unit_amount' => (int)$o['tax'], 'product_data' => ['name' => '消費税（10%）']], 'quantity' => 1];
+    }
+    if ((int)$o['shipping'] > 0) {
+        $lines[] = ['price_data' => ['currency' => 'jpy', 'unit_amount' => (int)$o['shipping'], 'product_data' => ['name' => '送料（税込）']], 'quantity' => 1];
+    }
+    $sum = 0;
+    foreach ($lines as $l) { $sum += $l['price_data']['unit_amount'] * $l['quantity']; }
+    if ($sum !== (int)$o['total']) {
+        throw new RuntimeException('明細の合計（' . $sum . '円）が受注の合計（' . (int)$o['total'] . '円）と合いません');
+    }
+    $base = 'https://' . ($_SERVER['HTTP_HOST'] ?? 'www.exdirect.net') . KV_BASE;
+    $letters = '';
+    for ($i = 0; $i < 8; $i++) { $letters .= chr(97 + random_int(0, 25)); }
+    $s = kv_stripe_call('POST', '/checkout/sessions', [
+        'mode' => 'payment',
+        'line_items' => $lines,
+        'customer_email' => $o['email'],
+        'client_reference_id' => (string)$oid,
+        'metadata' => ['kv_order_id' => (string)$oid, 'kv_order' => $o['code']],
+        'payment_intent_data' => ['metadata' => ['kv_order_id' => (string)$oid, 'kv_order' => $o['code']],
+                                  'description' => kv_shop('name') . ' ご注文 ' . $o['code']],
+        'success_url' => $base . '/cart/complete',
+        'cancel_url' => $base . '/cart/complete?canceled=1',
+        'integration_identifier' => 'kvcart-checkout-' . $letters,
+    ], 'kv-cs-' . $o['code'] . '-' . bin2hex(random_bytes(4)));
+    kv_db()->prepare('UPDATE orders SET stripe_id=? WHERE id=?')->execute([$s['id'], $oid]);
+    kv_log($oid, 'stripe', 'カード決済の画面を作りました: ' . $s['id'] . ' ' . number_format((int)$o['total']) . '円');
+    return $s;
+}
+
 /** お支払いページの URL（メールの {pay_url}）。 */
 function kv_stripe_pay_url(array $o): string
 {
@@ -161,9 +208,24 @@ function kv_stripe_handle(array $ev): string
     $oid = (int)($obj['metadata']['kv_order_id'] ?? 0);
     $o = $oid ? kv_order($oid) : null;
     if (!$o) { return 'ignored: no order'; }
-    // 作り直して取り消した古い請求書のイベントは無視する
-    if (($obj['id'] ?? '') !== (string)$o['stripe_id']) { return 'ignored: old invoice'; }
+    // 作り直して取り消した古い請求書・やり直す前の決済画面のイベントは無視する
+    if (($obj['id'] ?? '') !== (string)$o['stripe_id']) { return 'ignored: old object'; }
     switch ($ev['type'] ?? '') {
+        case 'checkout.session.completed':
+        case 'checkout.session.async_payment_succeeded':
+            // 後払い型の決済方法では completed の時点でまだ未払いのことがある。払い済みのときだけ入金にする
+            if (!in_array($obj['payment_status'] ?? '', ['paid', 'no_payment_required'], true)) {
+                kv_log($oid, 'stripe', '決済の手続きは済みましたが、入金はまだです: ' . $obj['id']);
+                return 'completed but unpaid';
+            }
+            if ((int)$o['f_paid'] === 1) { return 'already paid'; }
+            kv_log($oid, 'stripe', 'カードでのお支払いを確認しました: ' . $obj['id'] . ' / ' . ($obj['payment_intent'] ?? '')
+                   . ' ' . number_format((int)($obj['amount_total'] ?? 0)) . '円');
+            kv_order_flag($oid, 'paid', true, true);
+            return 'paid';
+        case 'checkout.session.async_payment_failed':
+            kv_log($oid, 'stripe', 'お支払いが失敗しました: ' . $obj['id']);
+            return 'failed logged';
         case 'invoice.paid':
             if ((int)$o['f_paid'] === 1) { return 'already paid'; }
             kv_log($oid, 'stripe', 'カードでのお支払いを確認しました: ' . $obj['id']

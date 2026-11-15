@@ -235,7 +235,7 @@ function kv_mail_render(int $oid, string $key): array
         '{code}' => $o['code'], '{name}' => $o['name'] ?: 'お客様',
         '{total}' => number_format((int)$o['total']), '{items}' => $items,
         '{bank}' => $o['payment'] === 'bank' ? "【お振込先】\n" . kv_shop('bank')
-                    : "【クレジットカードでのお支払い】\n在庫・納期・送料を確認したのち、お支払いページのリンクをメールでお送りします。",
+                    : "【お支払い】\nクレジットカード（ご注文時のお支払い画面）。お支払いを確認したら、あらためてお知らせします。",
         '{pay_url}' => $o['payment'] === 'stripe' && function_exists('kv_stripe_pay_url') ? kv_stripe_pay_url($o) : '',
         '{tracking}' => $o['tracking'] ? '送り状番号: ' . $o['tracking'] : '',
         '{shop}' => kv_shop('name') . '（' . kv_shop('company') . '）',

@@ -22,6 +22,7 @@ require __DIR__ . '/kv_lib.php';
 require __DIR__ . '/kv_ui.php';
 require __DIR__ . '/kv_order.php';
 require __DIR__ . '/kv_cart.php';
+require __DIR__ . '/kv_stripe.php';
 require __DIR__ . '/kv_pages.php';
 
 // **セッションは出力より前に始める。** kv_head() を呼んだ後に session_start() すると
@@ -73,6 +74,7 @@ function kv_route(string $path, int $page): void
         case '/cart/delivery': kv_page_delivery(); return;   // STEP 2 お届け先・お支払い
         case '/cart/confirm':  kv_page_confirm(); return;    // STEP 3 確認
         case '/cart/complete': kv_page_complete(); return;   // STEP 4 完了
+        case '/cart/pay':      kv_page_pay(); return;        // カード決済のやり直し
         // 旧実装のURL。踏まれても落とさずカートへ返す
         case '/checkout':
         case '/thanks':        header('Location: ' . kv_url('cart')); return;

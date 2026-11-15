@@ -326,8 +326,7 @@ function kv_page_delivery(): void
        . '<div class="src" style="margin:4px 0 10px 24px">ご入金を確認してから発送します。振込手数料はお客様のご負担でお願いします。</div>';
     if (kv_stripe_ready()) {
         echo '<label><input type="radio" name="payment" value="stripe"> <b>クレジットカード</b></label>'
-           . '<div class="src" style="margin:4px 0 0 24px">在庫・納期・送料を確認したのち、お支払いページのリンクをメールでお送りします。'
-           . 'そのページからカードでお支払いください。</div>';
+           . '<div class="src" style="margin:4px 0 0 24px">「注文する」を押すと、カードのお支払い画面（Stripe）に進みます。</div>';
     } else {
         echo '<div class="src">クレジットカード決済は準備中です。</div>';
     }
@@ -353,6 +352,17 @@ function kv_page_confirm(): void
         kv_cart_set([]);
         unset($_SESSION['checkout']);
         $_SESSION['last_order'] = $oid;
+        $o = kv_order($oid);
+        if ($o['payment'] === 'stripe' && function_exists('kv_stripe_checkout')) {
+            try {
+                $s = kv_stripe_checkout($oid);
+                header('Location: ' . $s['url'], true, 303);   // Stripe の決済画面へ
+                return;
+            } catch (RuntimeException $e) {
+                kv_log($oid, 'stripe', '決済画面を作れませんでした: ' . $e->getMessage());
+                $_SESSION['pay_error'] = 1;
+            }
+        }
         header('Location: ' . kv_url('cart/complete'));
         return;
     }
@@ -404,12 +414,32 @@ function kv_page_confirm(): void
        . '<a href="' . kv_url('privacy') . '" target="_blank" rel="noopener">プライバシーポリシー</a>'
        . 'に同意のうえご注文いただいたものとします。<br>'
        . (($c['payment'] ?? 'bank') === 'stripe'
-          ? 'ご注文後、在庫と納期を確認し、カードでのお支払いページのリンクをメールでお送りします。'
+          ? '「注文する」を押すと、カードのお支払い画面に進みます。ご注文後、在庫と納期を確認してご連絡します。'
           : 'ご注文後、在庫と納期を確認し、振込先とあわせてメールでご連絡します。')
        . '送料が必要な地域・商品の場合は、金額を訂正してご連絡します。</p>'
        . '<p><a class="btn gray" href="' . kv_url('cart/delivery') . '">戻る</a> '
        . '<button class="btn" type="submit">注文する</button></p></form></div>';
     kv_footer();
+}
+
+/** カード決済をやり直す（決済画面で戻った・失敗したとき）。直前の注文だけ。 */
+function kv_page_pay(): void
+{
+    kv_session();
+    $oid = (int)($_SESSION['last_order'] ?? 0);
+    $o = $oid ? kv_order($oid) : null;
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !kv_csrf_ok() || !$o || $o['payment'] !== 'stripe' || (int)$o['f_paid'] === 1) {
+        header('Location: ' . kv_url('cart/complete'));
+        return;
+    }
+    try {
+        $s = kv_stripe_checkout($oid);
+        header('Location: ' . $s['url'], true, 303);
+    } catch (RuntimeException $e) {
+        kv_log($oid, 'stripe', '決済画面を作れませんでした: ' . $e->getMessage());
+        $_SESSION['pay_error'] = 1;
+        header('Location: ' . kv_url('cart/complete'));
+    }
 }
 
 /** STEP 4: 完了 */
@@ -432,9 +462,21 @@ function kv_page_complete(): void
            . '<p class="src">ご注文確認のメールを ' . kv_e($o['email']) . ' へお送りしました。'
            . '届かないときは迷惑メールフォルダをご確認のうえ、お問い合わせください。</p></div>';
         if ($o['payment'] === 'stripe') {
-            echo '<h2>カードでのお支払い</h2><div class="panel">在庫・納期・送料を確認したのち、'
-               . 'お支払いページのリンクを ' . kv_e($o['email']) . ' へメールでお送りします。'
-               . 'そのページからクレジットカードでお支払いください。</div>';
+            $o = kv_order((int)$oid);   // webhook で入金が付いていれば反映
+            echo '<h2>カードでのお支払い</h2><div class="panel">';
+            if ((int)$o['f_paid'] === 1) {
+                echo '<b>お支払いを確認しました。</b>ありがとうございます。';
+            } elseif (!empty($_GET['canceled']) || !empty($_SESSION['pay_error'])) {
+                echo '<b>カードのお支払いが完了していません。</b>ご注文はお受けしています。'
+                   . '下のボタンから、もう一度お支払いください。'
+                   . '<form method="post" action="' . kv_url('cart/pay') . '" style="margin-top:10px">'
+                   . '<input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
+                   . '<button class="btn" type="submit">カードで支払う</button></form>';
+            } else {
+                echo 'カードのお支払いを確認しています。確認できしだい、' . kv_e($o['email']) . ' へメールでお知らせします。';
+            }
+            unset($_SESSION['pay_error']);
+            echo '</div>';
         }
         if ($o['payment'] === 'bank') {
             echo '<h2>お振込先</h2><div class="panel">' . nl2br(kv_e(kv_shop('bank')))
