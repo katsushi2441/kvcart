@@ -9,7 +9,10 @@ declare(strict_types=1);
 
 function kv_head(string $title, string $desc = '', string $path = '/', array $extra = []): void
 {
-    $url = 'https://' . ($_SERVER['HTTP_HOST'] ?? 'exbridge.jp') . KV_BASE . $path;
+    // canonical の置き場所。kv_config.php で KV_ORIGIN（例 https://www.exdirect.net）を決めていれば、
+    // どのドメイン（www無し・デモのサブパス）で開いても正本のURLを指す（2026-11-15）
+    $url = defined('KV_ORIGIN') ? rtrim(KV_ORIGIN, '/') . $path
+                                : 'https://' . ($_SERVER['HTTP_HOST'] ?? 'exbridge.jp') . KV_BASE . $path;
     $site = kv_shop('name');
     $og = $extra['image'] ?? '';
     header('Content-Type: text/html; charset=utf-8');
