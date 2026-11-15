@@ -110,7 +110,12 @@ function kv_page_top(): void
        . '<li><b>商品ページのURLはそのまま</b>ブックマークや検索結果から、これまでどおり開けます</li>'
        . '<li><b>商品番号もそのまま</b>/product/番号 の番号はおちゃのこネットのときと同じです</li>'
        . '<li><b>取扱 ' . number_format($s['products']) . '点・' . $s['makers'] . 'メーカー</b>' . kv_e(kv_shop('tagline')) . '</li>'
-       . '</ul></section>';
+       . '</ul>'
+       // 平行稼働中は旧店舗（おちゃのこネット）も開いている。移していない商品はそちらで買える（2026-11-15）
+       . '<p class="oldshop"><b>旧店舗（おちゃのこネット版）も、しばらくのあいだ並行して営業しています。</b>'
+       . 'こちらに無い商品は、旧店舗でお探しください。　'
+       . '<a href="https://xdirect.ocnk.net/">旧店舗 xdirect.ocnk.net を開く</a></p>'
+       . '</section>';
     echo '<h2>メーカーから探す</h2><div class="makers">';
     foreach (kv_makers() as $mk) {
         echo '<a href="' . kv_url('product-group/' . (int)$mk['id']) . '">' . kv_e($mk['name'])
