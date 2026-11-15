@@ -25,7 +25,10 @@ $KV_SHOP = [
     'ship_note'=> '送料は商品ページの表記に従います。',
 ];
 
-// Stripe（アカウントを作ったら入れる）。**空のままなら決済ボタンを出さない。**
+// Stripe（カード払いの請求書・kv_stripe.php）。**空のままならカードの選択肢を出さない。**
+// secret は制限付きキー（rk_…）。権限は Customers・Invoices・Invoice Items の書き込みだけ。
+// webhook は、ダッシュボードで https://<ドメイン>/stripe_webhook.php を登録したときの署名シークレット（whsec_…）。
+// 選ぶイベント: invoice.paid / invoice.payment_failed / invoice.voided
 // kbilling と同じ考え方で、鍵が無いのにボタンだけ出して「押せない」状態を作らない。
 $KV_STRIPE = [
     'publishable' => '',

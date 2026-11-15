@@ -46,5 +46,5 @@ function kv_shop(string $k): string { return (string)(kv_cfg()['shop'][$k] ?? ''
 function kv_stripe_ready(): bool
 {
     $s = kv_cfg()['stripe'];
-    return $s['publishable'] !== '' && $s['secret'] !== '';
+    return $s['secret'] !== '';   // 請求書方式なので公開鍵（pk_）は使わない
 }

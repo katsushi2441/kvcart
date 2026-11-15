@@ -200,6 +200,11 @@ function kv_mail_defaults(): array
         'flag_received' => ['ご注文を承りました（{code}）',
             "{name} 様\n\nご注文を承りました。\n\n受注番号: {code}\n\n{shop}\n"],
         'flag_other' => ['ご連絡（{code}）', "{name} 様\n\n受注番号 {code} についてご連絡します。\n\n{shop}\n"],
+        'stripe_invoice' => ['お支払いのご案内（{code}）',
+            "{name} 様\n\nご注文いただいた商品の在庫・納期・送料を確認しました。\n"
+            . "下のページから、クレジットカードでお支払いください（お支払い期限は7日後です）。\n\n"
+            . "{pay_url}\n\n受注番号: {code}\nお支払い金額: {total}円（税込）\n\n{items}\n\n"
+            . "お支払いを確認したら、あらためてメールでお知らせします。\n\n{shop}\n{email}\n"],
     ];
 }
 
@@ -229,7 +234,9 @@ function kv_mail_render(int $oid, string $key): array
     $map = [
         '{code}' => $o['code'], '{name}' => $o['name'] ?: 'お客様',
         '{total}' => number_format((int)$o['total']), '{items}' => $items,
-        '{bank}' => $o['payment'] === 'bank' ? "【お振込先】\n" . kv_shop('bank') : '',
+        '{bank}' => $o['payment'] === 'bank' ? "【お振込先】\n" . kv_shop('bank')
+                    : "【クレジットカードでのお支払い】\n在庫・納期・送料を確認したのち、お支払いページのリンクをメールでお送りします。",
+        '{pay_url}' => $o['payment'] === 'stripe' && function_exists('kv_stripe_pay_url') ? kv_stripe_pay_url($o) : '',
         '{tracking}' => $o['tracking'] ? '送り状番号: ' . $o['tracking'] : '',
         '{shop}' => kv_shop('name') . '（' . kv_shop('company') . '）',
         '{email}' => kv_shop('email'),

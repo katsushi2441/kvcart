@@ -258,7 +258,8 @@ function kv_page_delivery(): void
        . '<div class="src" style="margin:4px 0 10px 24px">ご入金を確認してから発送します。振込手数料はお客様のご負担でお願いします。</div>';
     if (kv_stripe_ready()) {
         echo '<label><input type="radio" name="payment" value="stripe"> <b>クレジットカード</b></label>'
-           . '<div class="src" style="margin:4px 0 0 24px">VISA / Mastercard / JCB / American Express</div>';
+           . '<div class="src" style="margin:4px 0 0 24px">在庫・納期・送料を確認したのち、お支払いページのリンクをメールでお送りします。'
+           . 'そのページからカードでお支払いください。</div>';
     } else {
         echo '<div class="src">クレジットカード決済は準備中です。</div>';
     }
@@ -333,7 +334,9 @@ function kv_page_confirm(): void
        . '<a href="' . kv_url('terms') . '" target="_blank" rel="noopener">ご利用規約</a>と'
        . '<a href="' . kv_url('privacy') . '" target="_blank" rel="noopener">プライバシーポリシー</a>'
        . 'に同意のうえご注文いただいたものとします。<br>'
-       . 'ご注文後、在庫と納期を確認し、振込先とあわせてメールでご連絡します。'
+       . (($c['payment'] ?? 'bank') === 'stripe'
+          ? 'ご注文後、在庫と納期を確認し、カードでのお支払いページのリンクをメールでお送りします。'
+          : 'ご注文後、在庫と納期を確認し、振込先とあわせてメールでご連絡します。')
        . '送料が必要な地域・商品の場合は、金額を訂正してご連絡します。</p>'
        . '<p><a class="btn gray" href="' . kv_url('cart/delivery') . '">戻る</a> '
        . '<button class="btn" type="submit">注文する</button></p></form></div>';
@@ -359,6 +362,11 @@ function kv_page_complete(): void
            . '</table>'
            . '<p class="src">ご注文確認のメールを ' . kv_e($o['email']) . ' へお送りしました。'
            . '届かないときは迷惑メールフォルダをご確認のうえ、お問い合わせください。</p></div>';
+        if ($o['payment'] === 'stripe') {
+            echo '<h2>カードでのお支払い</h2><div class="panel">在庫・納期・送料を確認したのち、'
+               . 'お支払いページのリンクを ' . kv_e($o['email']) . ' へメールでお送りします。'
+               . 'そのページからクレジットカードでお支払いください。</div>';
+        }
         if ($o['payment'] === 'bank') {
             echo '<h2>お振込先</h2><div class="panel">' . nl2br(kv_e(kv_shop('bank')))
                . '<p class="src" style="margin-top:10px">ご入金を確認したら発送します。'

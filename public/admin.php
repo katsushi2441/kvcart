@@ -20,6 +20,7 @@ require __DIR__ . '/kv_session.php';
 require __DIR__ . '/kv_lib.php';
 require __DIR__ . '/kv_ui.php';
 require __DIR__ . '/kv_order.php';
+require __DIR__ . '/kv_stripe.php';
 
 kv_session();
 kv_admin_guard();
@@ -196,6 +197,9 @@ function kv_admin_order(): void
             kv_log($id, 'cancel', (string)$_POST['cancel'] === '1' ? 'キャンセルしました' : 'キャンセルを取り消しました');
         } elseif (isset($_POST['sendmail'])) {
             kv_mail_send($id, (string)$_POST['sendmail']);
+        } elseif (isset($_POST['stripe_invoice'])) {
+            try { kv_stripe_send_invoice($id); }
+            catch (RuntimeException $e) { kv_log($id, 'stripe', '請求書を送れませんでした: ' . $e->getMessage()); }
         }
         header('Location: ?a=order&id=' . $id);
         exit;
@@ -228,6 +232,29 @@ function kv_admin_order(): void
            . ($on ? '取り消す' : '完了にする') . '</button></form>';
     }
     echo '</div></div>';
+
+    // カード払いの請求書（Stripe）。注文後に在庫・送料を確かめてから、確定した金額で送る
+    if ($o['payment'] === 'stripe' && kv_stripe_ready()) {
+        $inv = kv_stripe_invoice_of($o);
+        echo '<form method="post" class="panel"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
+           . '<b>カード払いの請求書（Stripe）</b>';
+        if ($inv) {
+            $st = ['draft' => '下書き', 'open' => '未払い', 'paid' => '支払い済み', 'void' => '取り消し', 'uncollectible' => '回収不能'];
+            echo '<p>' . kv_e($inv['id']) . '　' . number_format((int)$inv['amount_due']) . '円　<b>'
+               . kv_e($st[$inv['status']] ?? $inv['status']) . '</b>'
+               . (!empty($inv['hosted_invoice_url']) ? '　<a href="' . kv_e($inv['hosted_invoice_url']) . '" target="_blank" rel="noopener">お支払いページ</a>' : '')
+               . '</p>';
+        } else {
+            echo '<p class="src">まだ請求書を送っていません。在庫・納期・送料を確かめ、送料を保存してから送ってください。</p>';
+        }
+        if ((int)$o['f_paid'] !== 1 && (!$inv || $inv['status'] !== 'paid')) {
+            echo '<p class="src">合計 ' . number_format((int)$o['total']) . '円（税込）で請求書を作り、お支払いリンクをメールで送ります。'
+               . '金額を変えたあとに押すと、前の請求書を取り消して作り直します。</p>'
+               . '<button class="btn" type="submit" name="stripe_invoice" value="1">'
+               . ($inv ? '請求書を送り直す' : 'カード払いの請求書を送る') . '</button>';
+        }
+        echo '</form>';
+    }
 
     // 明細
     echo '<div class="panel"><b>ご注文内容</b><div class="scroll"><table class="t">'
