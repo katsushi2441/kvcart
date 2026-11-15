@@ -43,7 +43,17 @@ function kv_admin_guard(): void
     if (!empty($_GET['logout'])) { unset($_SESSION['kv_admin']); header('Location: ?'); exit; }
     if (!empty($_SESSION['kv_admin'])) { return; }
     $err = '';
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pw'])) {
+    // 総当たり対策（2026-11-15）: 同じIPから15分に5回まちがえたら、15分は受け付けない
+    $lockf = __DIR__ . '/kv_data/admin_login_fail.json';
+    $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    $fails = is_file($lockf) ? (json_decode((string)file_get_contents($lockf), true) ?: []) : [];
+    $now = time();
+    foreach ($fails as $k => $ts) { $fails[$k] = array_values(array_filter((array)$ts, fn($t) => $t > $now - 900)); if (!$fails[$k]) unset($fails[$k]); }
+    $locked = count($fails[$ip] ?? []) >= 5;
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pw']) && ($locked || !kv_csrf_ok())) {
+        $err = $locked ? 'ログインの失敗が続いたため、しばらく受け付けません。15分ほどおいてからお試しください。'
+                       : '画面の有効期限が切れました。もう一度入力してください。';
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pw'])) {
         if ($cfg['hash'] === '') {
             $err = 'kv_config.php に管理パスワードが設定されていません。';
         } elseif (($_POST['user'] ?? '') === $cfg['user'] && password_verify((string)$_POST['pw'], $cfg['hash'])) {
@@ -53,6 +63,8 @@ function kv_admin_guard(): void
             exit;
         } else {
             $err = 'ユーザー名かパスワードが違います。';
+            $fails[$ip][] = $now;
+            @file_put_contents($lockf, json_encode($fails), LOCK_EX);
             usleep(400000);   // 総当たりを少し鈍らせる
         }
     }
@@ -60,6 +72,7 @@ function kv_admin_guard(): void
     echo '<div class="wrap" style="max-width:420px"><h1>管理画面</h1>';
     if ($err) { echo '<div class="alert">' . kv_e($err) . '</div>'; }
     echo '<form method="post" class="panel">'
+       . '<input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
        . '<label class="src">ユーザー名</label>'
        . '<input name="user" style="width:100%;padding:9px;border:2px solid #cfdae4;border-radius:8px">'
        . '<label class="src" style="display:block;margin-top:10px">パスワード</label>'

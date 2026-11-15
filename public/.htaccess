@@ -26,3 +26,9 @@ RewriteRule ^(.*)$ index.php [QSA,L]
 <Files "kv_config.php">
   Require all denied
 </Files>
+
+# PHP の版を外に出さない（2026-11-15）
+<IfModule mod_headers.c>
+  Header always unset X-Powered-By
+  Header unset X-Powered-By
+</IfModule>

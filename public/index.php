@@ -63,6 +63,7 @@ function kv_route(string $path, int $page): void
     switch ($path) {
         case '/sitemap.xml': kv_sitemap(); return;
         case '/robots.txt':  kv_robots(); return;
+        case '/llms.txt':    kv_llms(); return;
         case '/':         kv_page_top(); return;
         case '/makers':   kv_page_makers(); return;
         case '/search':   kv_page_search($page); return;
@@ -100,7 +101,13 @@ function kv_page_top(): void
     $r = kv_products([], 1, 24);
     kv_head(kv_shop('name') . ' ' . kv_shop('tagline'),
             '機械工具・計測機器・高圧洗浄機・バッテリーなどを直送・格安で。取扱' . number_format($s['products']) . '点。',
-            '/');
+            '/', ['jsonld' => ['@context' => 'https://schema.org', '@graph' => [
+                ['@type' => 'OnlineStore', 'name' => kv_shop('name'), 'url' => kv_base_url() . '/',
+                 'logo' => kv_abs('img/brand/favicon.png'), 'email' => kv_shop('email'), 'telephone' => kv_shop('tel'),
+                 'parentOrganization' => ['@type' => 'Organization', 'name' => kv_shop('company')]],
+                ['@type' => 'WebSite', 'name' => kv_shop('name'), 'url' => kv_base_url() . '/',
+                 'potentialAction' => ['@type' => 'SearchAction', 'target' => kv_base_url() . '/search?q={q}', 'query-input' => 'required name=q']],
+            ]]]);
     echo '<div class="wrap">';
     // おちゃのこネットから自社システムへ移したことを、トップで一番目立たせる（2026-11-15 依頼）。
     // X-Direct（exdirect.net）だけのお知らせ。配布版を使う店には出さない
@@ -232,14 +239,17 @@ function kv_page_product(int $id): void
     $mk = $p['maker_id'] ? kv_maker((int)$p['maker_id']) : null;
     $cat = $p['category_id'] ? kv_category((int)$p['category_id']) : null;
     $incl = kv_price_incl($p);
-    $desc = trim(mb_substr(strip_tags((string)$p['description']), 0, 140));
+    $desc = trim(mb_substr(trim(preg_replace('/\s+/u', ' ', strip_tags(kv_clean_desc((string)$p['description'])))), 0, 140));
     $jsonld = [
         '@context' => 'https://schema.org', '@type' => 'Product',
         'name' => $p['name'], 'sku' => $p['model_number'] ?: (string)$p['id'],
-        'image' => $p['image_url'] ?: null,
+        'image' => $p['image_url'] ? kv_abs((string)$p['image_url']) : null,
+        'url' => kv_base_url() . '/product/' . $id,
         'brand' => $mk ? ['@type' => 'Brand', 'name' => $mk['name']] : null,
         'offers' => $incl === null ? null : [
             '@type' => 'Offer', 'price' => (string)$incl, 'priceCurrency' => 'JPY',
+            'url' => kv_base_url() . '/product/' . $id, 'itemCondition' => 'https://schema.org/NewCondition',
+            'seller' => ['@type' => 'Organization', 'name' => kv_shop('company')],
             'availability' => (int)$p['stock_unlimited'] === 1 || (int)$p['stock'] > 0
                 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
         ],
@@ -251,7 +261,7 @@ function kv_page_product(int $id): void
        . ($cat ? ' › <a href="' . kv_url('product-list/' . (int)$cat['id']) . '">' . kv_e($cat['name']) . '</a>' : '')
        . '</nav>';
     echo '<h1>' . kv_e($p['name']) . '</h1><div class="pd">';
-    echo '<div class="img">' . ($p['image_url'] ? '<img src="' . kv_e(kv_img($p['image_url'])) . '" alt="">' : '') . '</div>';
+    echo '<div class="img">' . ($p['image_url'] ? '<img src="' . kv_e(kv_img($p['image_url'])) . '" alt="' . kv_e($p['name']) . '">' : '') . '</div>';
     echo '<div><div class="panel">';
     if ($p['model_number']) { echo '<p class="src">型番 ' . kv_e($p['model_number']) . '</p>'; }
     if ($incl === null) {
@@ -278,7 +288,7 @@ function kv_page_product(int $id): void
     echo '<p class="src" style="margin-top:12px">' . kv_e(kv_shop('ship_note')) . '</p>';
     echo '</div></div></div>';
     if ($p['description']) {
-        echo '<h2>商品説明</h2><div class="panel desc">' . $p['description'] . '</div>';
+        echo '<h2>商品説明</h2><div class="panel desc">' . kv_clean_desc((string)$p['description']) . '</div>';
     }
     echo '</div>';
     kv_footer();
@@ -337,7 +347,9 @@ function kv_page_static(string $key, string $path = ''): void
         kv_footer();
         return;
     }
-    kv_head($pg['title'], $pg['desc'] ?? '', $path);
+    $ld = ($key === 'page16' && !empty($GLOBALS['kv_faq_ld']))
+        ? ['jsonld' => ['@context' => 'https://schema.org', '@type' => 'FAQPage', 'mainEntity' => $GLOBALS['kv_faq_ld']]] : [];
+    kv_head($pg['title'], $pg['desc'] ?? '', $path, $ld);
     echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">ホーム</a> ｜ '
        . kv_e($pg['title']) . '</nav>';
     if (($pg['layout'] ?? '') === 'ocnk') {
@@ -402,4 +414,30 @@ function kv_robots(): void
     echo "User-agent: GPTBot\nUser-agent: Bytespider\nUser-Agent: TikTokSpider\nUser-agent: meta-externalagent\nDisallow: /\n\n"
        . "User-agent: *\nDisallow: /admin.php\nDisallow: /cart\nDisallow: /search\n\n"
        . 'Sitemap: ' . kv_origin() . "/sitemap.xml\n";
+}
+
+/** llms.txt（AIの検索・回答向けの案内。2026-11-15） */
+function kv_llms(): void
+{
+    $s = kv_stats();
+    $o = kv_origin();
+    header('Content-Type: text/plain; charset=utf-8');
+    echo '# ' . kv_shop('name') . "\n\n"
+       . '> ' . kv_shop('company') . 'が運営する、機械工具・計測機器・厨房機器・バッテリー・インバータなどの通信販売。'
+       . 'メーカー・仕入先から直送。取扱 ' . number_format($s['products']) . '点・' . $s['makers'] . "メーカー。\n\n"
+       . "## 主なページ\n\n"
+       . "- [メーカー一覧]($o/makers): 取り扱いメーカーと商品数\n"
+       . "- [商品ページ]($o/product/{番号}): 型番・税込価格・メーカー希望小売価格・在庫・商品説明\n"
+       . "- [ご利用案内]($o/help): 注文の流れ・送料・お支払い（銀行振込・クレジットカード）\n"
+       . "- [特定商取引法表示]($o/info): 販売事業者・返品・お届け\n"
+       . "- [よくあるご質問]($o/page/16)\n"
+       . "- [お問い合わせ]($o/contact): 掲載していない商品の見積もりも受け付けます\n\n"
+       . "## メーカー\n\n";
+    foreach (kv_makers() as $mk) {
+        echo '- [' . $mk['name'] . "の商品一覧]($o/product-group/" . (int)$mk['id'] . ")\n";
+    }
+    echo "\n## 注文について\n\n"
+       . "- 注文後に在庫・納期・送料を確認してご連絡します。\n"
+       . "- お支払いは銀行振込（前払い）と、クレジットカード（確認後にお送りするお支払いページから）。\n"
+       . "- 価格は税込表示。商品ページの価格が最新です。\n";
 }

@@ -7,6 +7,27 @@
  */
 declare(strict_types=1);
 
+/** 正本の起点（https://www.exdirect.net）。KV_ORIGIN が無ければ開かれたドメイン＋KV_BASE。 */
+function kv_base_url(): string
+{
+    return defined('KV_ORIGIN') ? rtrim(KV_ORIGIN, '/')
+                                : 'https://' . ($_SERVER['HTTP_HOST'] ?? 'exbridge.jp') . KV_BASE;
+}
+
+/** OGP・構造化データ用の絶対URL（img/… の相対パスは X や検索エンジンが読めない）。 */
+function kv_abs(string $u): string
+{
+    if ($u === '') { return ''; }
+    if (preg_match('#^https?://#', $u)) { return $u; }
+    return kv_base_url() . '/' . ltrim($u, '/');
+}
+
+/** 代引きはすべて不可（2026-11-15 ユーザー確認）。おちゃのこ時代の説明に残る【代引可】を【代引不可】として出す。 */
+function kv_clean_desc(string $html): string
+{
+    return str_replace('【代引可】', '【代引不可】', $html);
+}
+
 function kv_head(string $title, string $desc = '', string $path = '/', array $extra = []): void
 {
     // canonical の置き場所。kv_config.php で KV_ORIGIN（例 https://www.exdirect.net）を決めていれば、
@@ -14,13 +35,15 @@ function kv_head(string $title, string $desc = '', string $path = '/', array $ex
     $url = defined('KV_ORIGIN') ? rtrim(KV_ORIGIN, '/') . $path
                                 : 'https://' . ($_SERVER['HTTP_HOST'] ?? 'exbridge.jp') . KV_BASE . $path;
     $site = kv_shop('name');
-    $og = $extra['image'] ?? '';
+    $og = kv_abs((string)($extra['image'] ?? '')) ?: kv_abs('img/brand/og-default.png');
     header('Content-Type: text/html; charset=utf-8');
     echo '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
        . '<meta name="viewport" content="width=device-width,initial-scale=1">'
        . '<title>' . kv_e($title) . '｜' . kv_e($site) . '</title>'
        . '<meta name="description" content="' . kv_e($desc) . '">'
        . '<link rel="canonical" href="' . kv_e($url) . '">'
+       . '<link rel="icon" href="' . kv_e(kv_url('img/brand/favicon.png')) . '" type="image/png">'
+       . '<link rel="apple-touch-icon" href="' . kv_e(kv_url('img/brand/favicon.png')) . '">'
        . '<meta property="og:type" content="' . ($extra['og_type'] ?? 'website') . '">'
        . '<meta property="og:site_name" content="' . kv_e($site) . '">'
        . '<meta property="og:title" content="' . kv_e($title) . '">'
@@ -186,7 +209,7 @@ function kv_card(array $p): void
     $incl = kv_price_incl($p);
     echo '<div class="card">'
        . '<a class="thumb" href="' . kv_url('product/' . (int)$p['id']) . '">'
-       . ($p['image_url'] ? '<img src="' . kv_e(kv_img($p['image_url'])) . '" alt="" loading="lazy">' : '')
+       . ($p['image_url'] ? '<img src="' . kv_e(kv_img($p['image_url'])) . '" alt="' . kv_e($p['name']) . '" loading="lazy">' : '')
        . '</a><div class="b">'
        . '<a class="nm" href="' . kv_url('product/' . (int)$p['id']) . '">' . kv_e($p['name']) . '</a>'
        . ($p['model_number'] ? '<div class="mn">' . kv_e($p['model_number']) . '</div>' : '')
