@@ -304,10 +304,19 @@ function kv_page_product(int $id): void
             '@type' => 'Offer', 'price' => (string)$incl, 'priceCurrency' => 'JPY',
             'url' => kv_base_url() . '/product/' . $id, 'itemCondition' => 'https://schema.org/NewCondition',
             'seller' => ['@type' => 'Organization', 'name' => kv_shop('company')],
+            // 送料は原則無料（2026-11-16）。北海道(01)・沖縄(47)は別途送料の場合があるので、配送先から外す。
+            // 離島は書き分けられないため「原則」。海外は配送先に入れない
+            'shippingDetails' => kv_is_xdirect() ? [
+                '@type' => 'OfferShippingDetails',
+                'shippingRate' => ['@type' => 'MonetaryAmount', 'value' => 0, 'currency' => 'JPY'],
+                'shippingDestination' => ['@type' => 'DefinedRegion', 'addressCountry' => 'JP',
+                    'addressRegion' => array_map(fn($n) => sprintf('%02d', $n), range(2, 46))],
+            ] : null,
             'availability' => (int)$p['stock_unlimited'] === 1 || (int)$p['stock'] > 0
                 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
         ],
     ];
+    if (isset($jsonld['offers']) && is_array($jsonld['offers'])) { $jsonld['offers'] = array_filter($jsonld['offers'], fn($v) => $v !== null); }
     kv_head($p['name'], $desc, '/product/' . $id,
             ['og_type' => 'product', 'image' => $p['image_url'], 'jsonld' => array_filter($jsonld)]);
     echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a>'
