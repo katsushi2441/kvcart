@@ -61,6 +61,8 @@ function kv_route(string $path, int $page): void
     // ---- 固定ページ ----
     if (preg_match('#^/page/(\d+)$#', $path, $m)) { kv_page_static('page' . $m[1], $path); return; }
     switch ($path) {
+        case '/sitemap.xml': kv_sitemap(); return;
+        case '/robots.txt':  kv_robots(); return;
         case '/':         kv_page_top(); return;
         case '/makers':   kv_page_makers(); return;
         case '/search':   kv_page_search($page); return;
@@ -343,4 +345,55 @@ function kv_page_static(string $key, string $path = ''): void
     }
     echo '</div>';
     kv_footer();
+}
+
+
+/** 正本の起点URL（https://www.exdirect.net）。KV_ORIGIN が無ければ、開かれたドメイン＋KV_BASE。 */
+function kv_origin(): string
+{
+    return defined('KV_ORIGIN') ? rtrim(KV_ORIGIN, '/')
+                                : 'https://' . ($_SERVER['HTTP_HOST'] ?? 'exbridge.jp') . KV_BASE;
+}
+
+/**
+ * サイトマップ（2026-11-15。exdirect.net を切り替えたら404になっていた）。
+ * 出すのは表示できるページだけ（取り扱い終了の410は入れない）。lastmod は商品の更新日から取り、
+ * 呼ぶたびに今日の日付を打たない（毎回 now だと Google が lastmod を信用しなくなる）。
+ */
+function kv_sitemap(): void
+{
+    $db = kv_db();
+    $u = [];
+    $u[] = ['/', (string)$db->query("SELECT MAX(updated_at) FROM products WHERE hidden=0")->fetchColumn()];
+    foreach ($db->query("SELECT id, updated_at FROM products WHERE hidden=0 ORDER BY id") as $r) {
+        $u[] = ['/product/' . (int)$r['id'], (string)$r['updated_at']];
+    }
+    foreach ($db->query("SELECT maker_id, MAX(updated_at) m FROM products WHERE hidden=0 AND maker_id IS NOT NULL GROUP BY maker_id") as $r) {
+        $u[] = ['/product-group/' . (int)$r['maker_id'], (string)$r['m']];
+    }
+    foreach ($db->query("SELECT category_id, MAX(updated_at) m FROM products WHERE hidden=0 AND category_id IS NOT NULL GROUP BY category_id") as $r) {
+        $u[] = ['/product-list/' . (int)$r['category_id'], (string)$r['m']];
+    }
+    // 固定ページは中身を変えた日（kv_pages.php を直したらここも直す）
+    foreach (['/makers', '/info', '/help', '/terms', '/privacy', '/page/1', '/page/16'] as $sp) {
+        $u[] = [$sp, '2026-11-15'];
+    }
+    header('Content-Type: application/xml; charset=utf-8');
+    $o = kv_origin();
+    echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
+       . '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
+    foreach ($u as [$path, $mod]) {
+        echo '<url><loc>' . htmlspecialchars($o . $path, ENT_XML1) . '</loc>'
+           . ($mod !== '' ? '<lastmod>' . substr($mod, 0, 10) . '</lastmod>' : '') . "</url>\n";
+    }
+    echo "</urlset>\n";
+}
+
+/** robots.txt。おちゃのこネットのときと同じ拒否リストに、サイトマップの場所を足したもの。 */
+function kv_robots(): void
+{
+    header('Content-Type: text/plain; charset=utf-8');
+    echo "User-agent: GPTBot\nUser-agent: Bytespider\nUser-Agent: TikTokSpider\nUser-agent: meta-externalagent\nDisallow: /\n\n"
+       . "User-agent: *\nDisallow: /admin.php\nDisallow: /cart\nDisallow: /search\n\n"
+       . 'Sitemap: ' . kv_origin() . "/sitemap.xml\n";
 }
