@@ -45,6 +45,10 @@ a{color:#0a7d75}
 .wrap{max-width:1080px;margin:0 auto;padding:18px 16px 64px}
 header.site{background:#fff;border-bottom:1px solid #e5ebf1}
 header.site .inner{max-width:1080px;margin:0 auto;padding:12px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.logo{display:flex;align-items:center;flex:0 0 auto}
+.logo img{height:36px;width:auto;max-width:100%;object-fit:contain;display:block}
+header.site .mascot{height:48px;width:auto;object-fit:contain;flex:0 0 auto}
+@media (max-width:960px){header.site .inner{gap:8px 10px;padding:10px 16px}.logo{order:1}.logo img{height:30px}header.site .brand{order:2;flex:1 1 0;min-width:0;font-size:17px;white-space:normal}header.site .brand small{font-size:10px}header.site .mascot{order:3;height:40px}header.site .search{order:4;flex:1 1 calc(100% - 110px)}header.site .inner>.btn.ghost{order:5;flex:0 0 auto}}
 .brand{font-weight:900;font-size:19px;color:#12202f;text-decoration:none;white-space:nowrap}
 .brand small{display:block;font-weight:500;font-size:11px;color:#6b7a86}
 .search{flex:1 1 260px;min-width:0;display:flex;gap:6px}
@@ -144,12 +148,14 @@ function kv_header(): void
 {
     $q = kv_e($_GET['q'] ?? '');
     echo '<header class="site"><div class="inner">'
+       . '<a class="logo" href="' . kv_url('') . '"><img src="' . kv_url('img/brand/exbridge-logo.svg') . '" width="205" height="44" alt="株式会社エクスブリッジ"></a>'
        . '<a class="brand" href="' . kv_url('') . '">' . kv_e(kv_shop('name'))
        . '<small>' . kv_e(kv_shop('tagline')) . '</small></a>'
        . '<form class="search" method="get" action="' . kv_url('search') . '">'
        . '<input type="text" name="q" value="' . $q . '" placeholder="商品名・型番で検索" aria-label="商品検索">'
        . '<button class="btn" type="submit">検索</button></form>'
        . '<a class="btn ghost" href="' . kv_url('cart') . '">カート</a>'
+       . '<img class="mascot" src="' . kv_url('img/brand/kurage-mascot.webp') . '" width="265" height="300" alt="Kurage">'
        . '</div></header>';
 }
 
