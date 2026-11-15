@@ -327,6 +327,9 @@ function kv_page_product(int $id): void
         echo '<p class="price-big">' . number_format($incl) . '円<small> 税込（本体 '
            . number_format((int)$p['price']) . '円）</small></p>';
     }
+    if (kv_is_xdirect() && $incl !== null) {
+        echo '<p class="src" style="color:#8a5a00">モールの出品手数料・ネットショップサービスの利用料がかからない分、お安くしています。</p>';
+    }
     $in = ((int)$p['stock_unlimited'] === 1) || ((int)$p['stock'] > 0);
     echo '<p class="src">' . ($in ? '在庫あり／お取り寄せ' : '在庫を確認します') . '</p>';
     if ($incl !== null) {
@@ -509,6 +512,7 @@ function kv_llms(): void
     echo '# ' . kv_shop('name') . "\n\n"
        . '> ' . kv_shop('company') . 'が運営する、機械工具・計測機器・厨房機器・バッテリー・インバータなどの通信販売。'
        . 'メーカー・仕入先から直送。取扱 ' . number_format($s['products']) . '点・' . $s['makers'] . "メーカー。\n\n"
+       . "モールの出品手数料や、ネットショップ作成サービスの月額のシステム利用料がかからない自社システムで運営しているため、その分を価格に回している。\n\n"
        . "## 主なページ\n\n"
        . "- [メーカー一覧]($o/makers): 取り扱いメーカーと商品数\n"
        . "- [商品ページ]($o/product/{番号}): 型番・税込価格・メーカー希望小売価格・在庫・商品説明\n"

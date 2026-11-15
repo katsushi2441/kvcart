@@ -73,6 +73,7 @@ header.site{background:#fff;border-bottom:1px solid #e5ebf1}
 header.site .inner{max-width:1080px;margin:0 auto;padding:12px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
 .migrated{margin:18px 0 26px;padding:22px 24px;border-radius:16px;background:linear-gradient(135deg,#0a9a8f,#0b6fa8);color:#fff}.migrated .badge{display:inline-block;margin:0 0 10px;padding:4px 12px;border-radius:999px;background:#fff;color:#0b6fa8;font-weight:800;font-size:13px}.migrated h1{margin:0 0 12px;font-size:28px;line-height:1.4;color:#fff}.migrated .lead{margin:0 0 14px;font-size:15px;line-height:1.8}.migrated .lead a{color:#fff;font-weight:800;text-decoration:underline}.migrated .points{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.migrated .points li{background:rgba(255,255,255,.14);border-radius:10px;padding:10px 12px;font-size:13.5px;line-height:1.6}.migrated .points b{display:block;font-size:15px}.migrated .oldshop{margin:14px 0 0;padding:12px 14px;border-radius:10px;background:#fff;color:#12202f;font-size:14px;line-height:1.7}.migrated .oldshop b{display:block;color:#0b6fa8}.migrated .oldshop a{display:inline-block;margin-top:4px;color:#0a7d74;font-weight:800}@media (max-width:640px){.migrated{padding:18px 16px}.migrated h1{font-size:21px}.migrated h1 br{display:none}}
 .card{position:relative}.card .sold{position:absolute;top:8px;left:8px;z-index:1;background:#0a9a8f;color:#fff;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px}
+.valuebar{background:#fff7e0;border-bottom:1px solid #f1dfa6;color:#4a3b00;font-size:13.5px;line-height:1.6}.valuebar .inner{max-width:1080px;margin:0 auto;padding:8px 16px;display:flex;gap:10px;align-items:baseline}.valuebar .inner>b{flex:0 0 auto;background:#e09a00;color:#fff;border-radius:999px;padding:1px 10px;font-size:12.5px}.valuebar span b{color:#8a5a00}@media (max-width:640px){.valuebar .inner{flex-direction:column;gap:4px;font-size:12.5px}}
 .logo{display:flex;align-items:center;flex:0 0 auto}
 .logo img{height:36px;width:auto;max-width:100%;object-fit:contain;display:block}
 header.site .mascot{height:48px;width:auto;object-fit:contain;flex:0 0 auto}
@@ -172,6 +173,26 @@ h1.ptitle{font-size:15px;margin:0}
 </style>';
 }
 
+/** X-Direct（exdirect.net・デモ）で動いているか。店ごとの売り文句は、配布版を使う店には出さない。 */
+function kv_is_xdirect(): bool
+{
+    return defined('KV_ORIGIN') && strpos(KV_ORIGIN, 'exdirect.net') !== false;
+}
+
+/**
+ * 安さの理由の帯（2026-11-16 ユーザー指示: 全ページで「モールの出品手数料も、ネットショップサービスの利用料も
+ * かからないから安い」を伝える）。ヘッダーの直下に出す。
+ */
+function kv_value_strip(): string
+{
+    if (!kv_is_xdirect()) { return ''; }
+    return '<div class="valuebar"><div class="inner">'
+         . '<b>安さの理由</b>'
+         . '<span>Amazon・楽天・Yahoo!ショッピングのような<b>モールの出品手数料</b>も、'
+         . 'ネットショップ作成サービスの<b>月額のシステム利用料</b>もかからない自社システムで運営。'
+         . 'その分を価格に回して、メーカー直送でお安くお届けします。</span></div></div>';
+}
+
 function kv_header(): void
 {
     $q = kv_e($_GET['q'] ?? '');
@@ -184,7 +205,7 @@ function kv_header(): void
        . '<button class="btn" type="submit">検索</button></form>'
        . '<a class="btn ghost" href="' . kv_url('cart') . '">カート</a>'
        . '<img class="mascot" src="' . kv_url('img/brand/kurage-mascot.webp') . '" width="265" height="300" alt="Kurage">'
-       . '</div></header>';
+       . '</div></header>' . kv_value_strip();
 }
 
 /**
