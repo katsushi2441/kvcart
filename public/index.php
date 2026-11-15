@@ -407,12 +407,18 @@ function kv_sitemap(): void
     echo "</urlset>\n";
 }
 
-/** robots.txt。おちゃのこネットのときと同じ拒否リストに、サイトマップの場所を足したもの。 */
+/**
+ * robots.txt。ChatGPT（GPTBot・OAI-SearchBot・ChatGPT-User）は許可する（2026-11-15 ユーザー判断
+ * 「ChatGPT の答えに商品を出したい」）。名指しの節は * の節を置き換えるので、除外の指定も書き写す。
+ * おちゃのこネットのときに拒否していた Bytespider・TikTokSpider・meta-externalagent は拒否のまま。
+ */
 function kv_robots(): void
 {
     header('Content-Type: text/plain; charset=utf-8');
-    echo "User-agent: GPTBot\nUser-agent: Bytespider\nUser-Agent: TikTokSpider\nUser-agent: meta-externalagent\nDisallow: /\n\n"
-       . "User-agent: *\nDisallow: /admin.php\nDisallow: /cart\nDisallow: /search\n\n"
+    $deny = "Disallow: /admin.php\nDisallow: /cart\nDisallow: /search\n";
+    echo "User-agent: GPTBot\nUser-agent: OAI-SearchBot\nUser-agent: ChatGPT-User\n" . $deny . "\n"
+       . "User-agent: Bytespider\nUser-Agent: TikTokSpider\nUser-agent: meta-externalagent\nDisallow: /\n\n"
+       . "User-agent: *\n" . $deny . "\n"
        . 'Sitemap: ' . kv_origin() . "/sitemap.xml\n";
 }
 
