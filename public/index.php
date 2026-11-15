@@ -100,9 +100,17 @@ function kv_page_top(): void
             '機械工具・計測機器・高圧洗浄機・バッテリーなどを直送・格安で。取扱' . number_format($s['products']) . '点。',
             '/');
     echo '<div class="wrap">';
-    echo '<h1>' . kv_e(kv_shop('name')) . '</h1>'
-       . '<p class="src">' . kv_e(kv_shop('tagline')) . '　／　取扱 '
-       . number_format($s['products']) . '点・' . $s['makers'] . 'メーカー</p>';
+    // おちゃのこネットから自社システムへ移したことを、トップで一番目立たせる（2026-11-15 依頼）
+    echo '<section class="migrated">'
+       . '<p class="badge">システム移行のお知らせ</p>'
+       . '<h1>exdirect.net は、おちゃのこネットから<br>自社開発のECシステムへ移行しました</h1>'
+       . '<p class="lead">' . kv_e(kv_shop('name')) . '（exdirect.net）は、ネットショップ作成サービス「おちゃのこネット」で運営してきた店を、'
+       . '当社が開発したECシステム <a href="https://kappstore.exbridge.jp/app.php?id=754c7ddb5f1c8f26#ref=exdirect-top">Kurage Vibe-Cart</a> に移しました。</p>'
+       . '<ul class="points">'
+       . '<li><b>商品ページのURLはそのまま</b>ブックマークや検索結果から、これまでどおり開けます</li>'
+       . '<li><b>商品番号もそのまま</b>/product/番号 の番号はおちゃのこネットのときと同じです</li>'
+       . '<li><b>取扱 ' . number_format($s['products']) . '点・' . $s['makers'] . 'メーカー</b>' . kv_e(kv_shop('tagline')) . '</li>'
+       . '</ul></section>';
     echo '<h2>メーカーから探す</h2><div class="makers">';
     foreach (kv_makers() as $mk) {
         echo '<a href="' . kv_url('product-group/' . (int)$mk['id']) . '">' . kv_e($mk['name'])
