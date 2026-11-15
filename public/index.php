@@ -102,7 +102,9 @@ function kv_page_top(): void
             '機械工具・計測機器・高圧洗浄機・バッテリーなどを直送・格安で。取扱' . number_format($s['products']) . '点。',
             '/');
     echo '<div class="wrap">';
-    // おちゃのこネットから自社システムへ移したことを、トップで一番目立たせる（2026-11-15 依頼）
+    // おちゃのこネットから自社システムへ移したことを、トップで一番目立たせる（2026-11-15 依頼）。
+    // X-Direct（exdirect.net）だけのお知らせ。配布版を使う店には出さない
+    if (defined('KV_ORIGIN') && strpos(KV_ORIGIN, 'exdirect.net') !== false) {
     echo '<section class="migrated">'
        . '<p class="badge">システム移行のお知らせ</p>'
        . '<h1>exdirect.net は、おちゃのこネットから<br>自社開発のECシステムへ移行しました</h1>'
@@ -118,6 +120,10 @@ function kv_page_top(): void
        . 'こちらに無い商品は、旧店舗でお探しください。　'
        . '<a href="https://xdirect.ocnk.net/">旧店舗 xdirect.ocnk.net を開く</a></p>'
        . '</section>';
+    } else {
+        echo '<h1>' . kv_e(kv_shop('name')) . '</h1><p class="src">' . kv_e(kv_shop('tagline')) . '　／　取扱 '
+           . number_format($s['products']) . '点・' . $s['makers'] . 'メーカー</p>';
+    }
     echo '<h2>メーカーから探す</h2><div class="makers">';
     foreach (kv_makers() as $mk) {
         echo '<a href="' . kv_url('product-group/' . (int)$mk['id']) . '">' . kv_e($mk['name'])

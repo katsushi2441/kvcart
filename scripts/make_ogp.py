@@ -45,12 +45,13 @@ def build() -> Image.Image:
                          fill="#e6f4f2", outline="#bfe3de")
     dr.text((cx, 116), badge, font=f_badge, fill="#0a726b", anchor="mm")
 
-    dr.text((cx, 220), "URLを変えずに、", font=f_h, fill="#12202f", anchor="mm")
-    dr.text((cx, 300), "ECを乗り換える。", font=f_h2, fill="#0a9a8f", anchor="mm")
-    dr.text((cx, 372), "常駐プロセスもポートも要らない。FTPで置くだけ。", font=f_s, fill="#5d6b7a", anchor="mm")
-    dr.text((cx, 412), "AIに任せて商品登録も運用もできます。", font=f_s, fill="#5d6b7a", anchor="mm")
+    # 2026-11-15 差し替え: 「URLを変えずに乗り換え」は自社の移行の都合で、製品の利点ではない（ユーザー指摘）
+    dr.text((cx, 220), "ECサイト構築を、", font=f_h, fill="#12202f", anchor="mm")
+    dr.text((cx, 300), "レンタルサーバーで。", font=f_h2, fill="#0a9a8f", anchor="mm")
+    dr.text((cx, 372), "PHPだけ。FTPで置くだけ。月々の利用料はかかりません。", font=f_s, fill="#5d6b7a", anchor="mm")
+    dr.text((cx, 412), "AIに任せて、価格改定も受注処理もできます。", font=f_s, fill="#5d6b7a", anchor="mm")
 
-    pills = ["商品URLを保つ", "銀行振込・Stripe", "受注管理つき"]
+    pills = ["AIで運用（MCP）", "カードは請求書払い", "受注管理つき"]
     gap = 14
     widths = [dr.textlength(p, font=f_pill) + 34 for p in pills]
     total = sum(widths) + gap * (len(pills) - 1)
@@ -65,7 +66,7 @@ def build() -> Image.Image:
 
     if mascot:
         img.paste(mascot, (W - mascot.width - 40, H - mascot.height - 30), mascot)
-    dr.text((40, H - 40), "exbridge.jp/exdirect/",
+    dr.text((40, H - 40), "www.exdirect.net で稼働中",
             font=ImageFont.truetype(FR, 22), fill="#5d6b7a", anchor="lm")
     return img
 
