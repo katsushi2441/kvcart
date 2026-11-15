@@ -116,7 +116,15 @@ def clean_description(html: str) -> str:
         return ""
     html = re.sub(r'(?is)<p[^>]*>\s*<a[^>]*aixec\.exbridge\.jp/go\.php.*?</p>', '', html)
     html = re.sub(r'(?is)<p[^>]*>\s*<a[^>]*go\.php\?to=(rakuten|amazon).*?</p>', '', html)
+    # おちゃのこ時代の「チャンス・Wチャンス」バナー（wchance_bnr*.jpg）は出さない（2026-11-16 ユーザー指示）
+    html = re.sub(r'(?i)(<br\s*/?>\s*)?<a[^>]*>\s*<img[^>]*wchance_bnr[^"]*\.(?:jpg|png|gif)[^>]*>\s*</a>(\s*<br\s*/?>){0,2}'
+                  r'|<img[^>]*wchance_bnr[^"]*\.(?:jpg|png|gif)[^>]*>', '', html)
     return html.strip()
+
+
+def clean_name(name: str) -> str:
+    """商品名から【激安】【セール】の札を外す（2026-11-16 ユーザー指示）。ほかの札・空白はそのまま。"""
+    return re.sub(r'[ \u3000]*【(?:激安|セール)】', '', name or '').rstrip()
 
 
 def build():
@@ -155,7 +163,7 @@ def build():
             "INSERT OR REPLACE INTO products (id,name,model_number,gtin,price,price_unspecified,"
             "list_price,stock,stock_unlimited,hidden,category_id,maker_id,description,image_url,"
             "tax_reduce,updated_at,imported_at,variations) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (p["id"], p.get("name"), p.get("model_number"), p.get("gtin"), p.get("price"),
+            (p["id"], clean_name(p.get("name")), p.get("model_number"), p.get("gtin"), p.get("price"),
              1 if p.get("price_unspecified") else 0, p.get("list_price"), p.get("stock"),
              1 if p.get("stock_unlimited") else 0, 1 if p.get("hidden") else 0,
              cat.get("id"), mine, desc, img, 1 if p.get("tax_reduce") else 0,

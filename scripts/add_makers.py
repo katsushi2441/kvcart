@@ -25,7 +25,7 @@ import time
 sys.path.insert(0, "/home/kojima/work/exdirect_net")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ocnk_client import OcnkClient  # noqa: E402
-from import_ocnk import clean_description  # noqa: E402
+from import_ocnk import clean_description, clean_name  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMG = os.path.join(ROOT, "public", "img")
@@ -105,7 +105,7 @@ def main():
             "INSERT INTO products (id,name,model_number,gtin,price,price_unspecified,list_price,stock,"
             "stock_unlimited,hidden,category_id,maker_id,description,image_url,tax_reduce,updated_at,imported_at,variations)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (p["id"], p.get("name"), p.get("model_number"), p.get("gtin"), p.get("price"),
+            (p["id"], clean_name(p.get("name")), p.get("model_number"), p.get("gtin"), p.get("price"),
              1 if p.get("price_unspecified") else 0, p.get("list_price"), p.get("stock"),
              1 if p.get("stock_unlimited") else 0, 1 if p.get("hidden") else 0,
              cat.get("id"), gid, clean_description(((p.get("description") or {}).get("text")) or ""),
