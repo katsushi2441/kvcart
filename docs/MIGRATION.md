@@ -34,6 +34,23 @@
 6. 旧URLを10本ほど実際に踏んで、同じ商品が出ることを確かめる
 7. おちゃのこネットの契約を止める
 
+## 実際の切替（2026-11-15 決定）: デモのフォルダをそのまま exdirect.net に向ける
+
+heteml の独自ドメイン設定で exdirect.net / www.exdirect.net の行き先を **`/web/exbridge_jp/exdirect`（デモと同じフォルダ）** にする。
+データ（kv_data）が1つなので、デモからの注文も本番の注文も同じ DB に入る。
+
+そのために本番の2ファイルを「アクセスされたドメインで切り替わる」形にした（2026-11-15 配置済み・デモの動作は確認済み）:
+
+- `kv_config.php`: `define('KV_BASE', preg_match('/(^|\.)exdirect\.net$/i', $_SERVER['HTTP_HOST'] ?? '') ? '' : '/exdirect');`
+- `.htaccess`: `RewriteBase` を書かず、最後の振り分けをドメインで分ける
+  ```apache
+  RewriteCond %{HTTP_HOST} (^|\.)exdirect\.net$ [NC]
+  RewriteRule ^(.*)$ /index.php [QSA,L]
+  RewriteRule ^(.*)$ /exdirect/index.php [QSA,L]
+  ```
+
+切替前の本番ファイルは `outputs/*.server-before-domain` に退避（outputs は Git 管理外）。
+
 ## 踏んだ罠（同じ所で止まらないために）
 
 - **`AddHandler php8.2-script` は exbridge.jp では404になる。** 契約ごとに使える書式が違う。
