@@ -10,3 +10,4 @@ public/kv_data/images/
 *.env.bak*
 __pycache__/
 outputs/
+public/kv_data/sales_history.json

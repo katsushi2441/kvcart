@@ -137,10 +137,64 @@ function kv_page_top(): void
            . ' <span class="src">' . number_format((int)$mk['cnt']) . '</span></a>';
     }
     echo '</div>';
+    // 最近売れた商品・よく売れている商品（2026-11-16 ユーザー指示）
+    [$recent, $popular] = kv_sales_lists(12);
+    if ($recent) {
+        echo '<h2>最近売れた商品</h2><div class="grid">';
+        foreach ($recent as [$p, $it]) { kv_card($p, (int)substr($it['last'], 5, 2) . '月' . (int)substr($it['last'], 8, 2) . '日に注文'); }
+        echo '</div>';
+    }
+    if ($popular) {
+        echo '<h2>よく売れている商品</h2><p class="src">この1年の注文回数が多い順です。</p><div class="grid">';
+        foreach ($popular as [$p, $it]) { kv_card($p, 'この1年で' . (int)$it['orders'] . '回注文'); }
+        echo '</div>';
+    }
     echo '<h2>新着</h2><div class="grid">';
     foreach ($r['items'] as $p) { kv_card($p); }
     echo '</div></div>';
     kv_footer();
+}
+
+/**
+ * 売れた記録（2026-11-16）。おちゃのこ時代の分は kv_data/sales_history.json（scripts/build_sales_history.py が作る）、
+ * この店に入った注文は orders・order_items からその場で足す。お客さまの情報は使わない。
+ * 返り値: [最近売れた順, 注文回数の多い順]。どちらも [商品, ['last'=>日付,'orders'=>回数,'qty'=>個数]] の並び。
+ * 今この店で売っている（表示している）商品だけを出す。
+ */
+function kv_sales_lists(int $n = 12): array
+{
+    $items = [];
+    $f = __DIR__ . '/kv_data/sales_history.json';
+    if (is_file($f)) {
+        $j = json_decode((string)file_get_contents($f), true);
+        foreach (($j['items'] ?? []) as $pid => $it) { $items[(int)$pid] = $it; }
+    }
+    try {
+        $since = date('Y-m-d', strtotime('-365 days'));
+        $st = kv_db()->prepare("SELECT i.product_id pid, MAX(substr(o.created_at,1,10)) last, COUNT(DISTINCT o.id) n, SUM(i.qty) q"
+            . " FROM order_items i JOIN orders o ON o.id=i.order_id WHERE o.cancelled=0 AND o.created_at>=? GROUP BY i.product_id");
+        $st->execute([$since]);
+        foreach ($st->fetchAll() as $r) {
+            $pid = (int)$r['pid'];
+            $it = $items[$pid] ?? ['last' => '', 'orders' => 0, 'qty' => 0];
+            $it['last'] = max((string)$it['last'], (string)$r['last']);
+            $it['orders'] += (int)$r['n'];
+            $it['qty'] += (int)$r['q'];
+            $items[$pid] = $it;
+        }
+    } catch (Throwable $e) { /* まだ注文の表が無いときは、おちゃのこの分だけ */ }
+    if (!$items) { return [[], []]; }
+    $ids = array_keys($items);
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    $st = kv_db()->prepare("SELECT * FROM products WHERE id IN ($in) AND hidden=0");
+    $st->execute($ids);
+    $rows = [];
+    foreach ($st->fetchAll() as $p) { $rows[] = [$p, $items[(int)$p['id']]]; }
+    $recent = $rows;
+    usort($recent, fn($a, $b) => strcmp($b[1]['last'], $a[1]['last']));
+    $popular = $rows;
+    usort($popular, fn($a, $b) => [$b[1]['orders'], $b[1]['qty'], $b[1]['last']] <=> [$a[1]['orders'], $a[1]['qty'], $a[1]['last']]);
+    return [array_slice($recent, 0, $n), array_slice($popular, 0, $n)];
 }
 
 function kv_page_makers(): void
