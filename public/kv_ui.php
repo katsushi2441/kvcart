@@ -186,6 +186,18 @@ function kv_header(): void
        . '</div></header>';
 }
 
+/**
+ * 「エクスブリッジについて」の欄（2026-11-16 ユーザー指示: 国会トラッカーと同じ会社概要を © の上に）。
+ * 正本は /home/kojima/work/kurage_web/exbridge-about.html（{REF} は exb-about-exdirect）。
+ * 売っている製品なので、当社の店（exdirect.net・exbridge.jp のデモ）で動いているときだけ出す。
+ */
+function kv_exb_about(): string
+{
+    $h = (string)($_SERVER['HTTP_HOST'] ?? '');
+    if (!preg_match('/(^|\\.)exdirect\\.net$/', $h) && $h !== 'exbridge.jp') { return ''; }
+    return '<section class="exb-about" style="max-width:1080px;margin:32px auto 0;padding:18px 16px 8px;border-top:1px solid #d6dde3;font-size:13.5px;line-height:1.75;color:#33414d;background:transparent;box-sizing:border-box;text-align:left"><h2 style="font-size:15px;line-height:1.5;margin:0 0 6px;color:#1f2d38;font-weight:700">エクスブリッジについて</h2><p style="margin:0 0 8px">このページは、名古屋のシステム開発会社・株式会社エクスブリッジが運営しています。AIを使って中小企業の業務システムを作り、保守契約・月額のシステム利用料・要件定義なしで使える買い切りの業務システムを <a href="https://kappstore.exbridge.jp/#ref=exb-about-exdirect">Kurage App Store</a> で販売しています。</p><dl style="display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:0 0 8px"><dt style="font-weight:700">会社名</dt><dd style="margin:0">株式会社エクスブリッジ（EXBRIDGE, Inc.）</dd><dt style="font-weight:700">所在地</dt><dd style="margin:0">愛知県名古屋市瑞穂区内浜町34-9 305</dd><dt style="font-weight:700">設立</dt><dd style="margin:0">2004年4月</dd><dt style="font-weight:700">資本金</dt><dd style="margin:0">1億250万円</dd><dt style="font-weight:700">代表取締役</dt><dd style="margin:0">小嶋 篤</dd><dt style="font-weight:700">法人番号</dt><dd style="margin:0">4180001056508</dd><dt style="font-weight:700">事業</dt><dd style="margin:0">AIを使った業務システムの開発、Kurage App Store の運営、AI-IT顧問</dd></dl><p style="margin:0"><a href="https://exbridge.jp/profile.html#ref=exb-about-exdirect">会社概要</a>　<a href="https://exbridge.jp/vibeblog/2026-11-03-exbridge-yameta-3tsu-hoshu-getsugaku-youken.html#ref=exb-about-exdirect">エクスブリッジがやめた3つ</a>　<a href="https://exbridge.jp/system-kaihatsu-nagoya.html#ref=exb-about-exdirect">システム開発 名古屋</a>　<a href="https://exbridge.jp/homepage-seisaku-nagoya.html#ref=exb-about-exdirect">ホームページ制作 名古屋</a>　<a href="https://exbridge.jp/ai-it-komon.html#ref=exb-about-exdirect">AI-IT顧問</a>　<a href="https://exbridge.jp/contact.php#ref=exb-about-exdirect">お問い合わせ</a></p></section>';
+}
+
 function kv_footer(): void
 {
     // 規約・プライバシーポリシーは **全ページから1クリックで開ける**ようにする
@@ -198,6 +210,7 @@ function kv_footer(): void
        . ' ・ <a href="' . kv_url('contact') . '">お問い合わせ</a></p>'
        . '<p><a href="' . kv_url('page/1') . '">' . kv_e(kv_shop('name')) . 'について</a>'
        . ' ・ <a href="' . kv_url('makers') . '">メーカー一覧</a></p>'
+       . kv_exb_about()
        . '<p>&copy; ' . date('Y') . ' ' . kv_e(kv_shop('company')) . '</p>'
        . ((($_SERVER['HTTP_HOST'] ?? '') === 'exbridge.jp') ? '<p style="font-size:13px">この店は Kurage Vibe-Cart のデモです。<a href="https://kappstore.exbridge.jp/app.php?id=754c7ddb5f1c8f26&amp;ref=exdirect" target="_blank" rel="noopener">PHPだけで動くECをオンプレミスで（商品ページ）</a></p>' : '')
        . '</div></footer></body></html>';
