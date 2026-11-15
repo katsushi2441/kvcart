@@ -114,7 +114,8 @@ function kv_stripe_send_invoice(int $oid): array
         'description' => kv_shop('name') . ' ご注文 ' . $o['code'],
         'metadata' => ['kv_order_id' => (string)$oid, 'kv_order' => $o['code']],
     ], $key . '-inv');
-    foreach ($lines as $i => [$desc, $amount]) {
+    // 請求書の明細は後から足したものが上に出るので、逆順に足して「商品 → 消費税 → 送料」の順に見せる
+    foreach (array_reverse($lines, true) as $i => [$desc, $amount]) {
         kv_stripe_call('POST', '/invoiceitems', [
             'customer' => $cus['id'], 'invoice' => $inv['id'],
             'currency' => 'jpy', 'amount' => $amount, 'description' => $desc,
