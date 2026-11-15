@@ -13,6 +13,7 @@ import_ocnk.py --build は14社を全部作り直すので、そのあとに直�
 """
 import argparse
 import hashlib
+import json
 import io
 import os
 import re
@@ -102,13 +103,14 @@ def main():
         cat = p.get("category") or {}
         cur.execute(
             "INSERT INTO products (id,name,model_number,gtin,price,price_unspecified,list_price,stock,"
-            "stock_unlimited,hidden,category_id,maker_id,description,image_url,tax_reduce,updated_at,imported_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "stock_unlimited,hidden,category_id,maker_id,description,image_url,tax_reduce,updated_at,imported_at,variations)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (p["id"], p.get("name"), p.get("model_number"), p.get("gtin"), p.get("price"),
              1 if p.get("price_unspecified") else 0, p.get("list_price"), p.get("stock"),
              1 if p.get("stock_unlimited") else 0, 1 if p.get("hidden") else 0,
              cat.get("id"), gid, clean_description(((p.get("description") or {}).get("text")) or ""),
-             img, 1 if p.get("tax_reduce") else 0, p.get("updated_at"), now))
+             img, 1 if p.get("tax_reduce") else 0, p.get("updated_at"), now,
+             json.dumps(p["variations"], ensure_ascii=False) if (p.get("variations") or {}).get("options") else None))
         cur.execute("DELETE FROM retired_products WHERE id=?", (p["id"],))
         added += 1
     for cid, (cname, pid, pname) in cats.items():

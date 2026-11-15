@@ -276,7 +276,31 @@ function kv_page_product(int $id): void
     $in = ((int)$p['stock_unlimited'] === 1) || ((int)$p['stock'] > 0);
     echo '<p class="src">' . ($in ? '在庫あり／お取り寄せ' : '在庫を確認します') . '</p>';
     if ($incl !== null) {
-        echo '<form method="post" action="' . kv_url('cart') . '">'
+        // オプション（おちゃのこネットの「オプション」と同じ。選ばないとカートに入らない）
+        $opt_html = '';
+        $vjson = json_decode((string)($p['variations'] ?? ''), true);
+        foreach (kv_variations($p) as $i => $o) {
+            $opt_html .= '<label class="src" style="display:block;margin:0 0 8px">' . kv_e($o['label'])
+                . '<br><select name="opt[' . $i . ']" required style="width:100%;max-width:360px;padding:8px;border:2px solid #cfdae4;border-radius:8px">'
+                . '<option value="">選択してください</option>';
+            foreach ($o['values'] as $j => $val) {
+                $extra = '';
+                if (count(kv_variations($p)) === 1) {   // 項目が1つのときだけ、組み合わせ別の価格・品切れを横に出す
+                    foreach (($vjson['data'] ?? []) as $d) {
+                        if ((string)($d['option1'] ?? '') !== $val) { continue; }
+                        if (empty($d['stock_unlimited']) && $d['stock'] !== null && (int)$d['stock'] <= 0) { $extra = '（品切れ）'; }
+                        elseif ($d['price'] !== null) { $extra = '（' . number_format((int)floor((int)$d['price'] * 1.1)) . '円 税込）'; }
+                    }
+                }
+                $opt_html .= '<option value="' . $j . '"' . ($extra === '（品切れ）' ? ' disabled' : '') . '>'
+                          . kv_e($val . $extra) . '</option>';
+            }
+            $opt_html .= '</select></label>';
+        }
+        if ($opt_html !== '' && !empty($_GET['need_option'])) {
+            $opt_html = '<div class="alert">オプションを選んでから「カートに入れる」を押してください。</div>' . $opt_html;
+        }
+        echo '<form method="post" action="' . kv_url('cart') . '">' . $opt_html
            . '<input type="hidden" name="add" value="' . (int)$p['id'] . '">'
            . '<input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
            . '<label class="src">数量 <input type="number" name="qty" value="1" min="1" max="99" '

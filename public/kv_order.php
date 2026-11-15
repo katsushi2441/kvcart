@@ -94,7 +94,7 @@ function kv_order_create(array $cart, array $post): int
                        . ' VALUES (?,?,?,?,?,?,?,?)');
     foreach ($cart['lines'] as $l) {
         $p = $l['product'];
-        $si->execute([$oid, (int)$p['id'], $p['name'], $p['model_number'],
+        $si->execute([$oid, (int)$p['id'], $p['name'] . (!empty($l['opt']) ? '（' . $l['opt'] . '）' : ''), $p['model_number'],
                       $l['unit'], $l['qty'], $l['amount'], $l['tax']]);
     }
     kv_log($oid, 'created', '注文を受け付けました');

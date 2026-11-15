@@ -23,25 +23,83 @@ function kv_cart_set(array $c): void
     $_SESSION['cart'] = $c;
 }
 
+/**
+ * 商品のオプション（おちゃのこネットの「オプション」）。products.variations にAPIの形のまま入っている:
+ *   {"options":{"option1":{"label":"吐出口","values":["左方向吐出タイプ(L)","右方向吐出タイプ"]}},"data":[組み合わせ別の価格・在庫]}
+ * 返り値: [['label'=>..., 'values'=>[...]], ...]（option1, option2… の順）
+ */
+function kv_variations(array $p): array
+{
+    $v = json_decode((string)($p['variations'] ?? ''), true);
+    $out = [];
+    foreach (($v['options'] ?? []) as $k => $o) {
+        if (!empty($o['values'])) { $out[(int)preg_replace('/\D/', '', $k)] = ['label' => (string)$o['label'], 'values' => array_values($o['values'])]; }
+    }
+    ksort($out);
+    return array_values($out);
+}
+
+/** 選んだオプション（各項目の番号）から、表示用の文字列と、組み合わせ別の価格（無ければ null）を返す。不正なら null。 */
+function kv_variation_pick(array $p, array $idx): ?array
+{
+    $opts = kv_variations($p);
+    if (!$opts) { return $idx ? null : ['text' => '', 'price' => null, 'values' => []]; }
+    if (count($idx) !== count($opts)) { return null; }
+    $vals = []; $parts = [];
+    foreach ($opts as $i => $o) {
+        $j = (int)$idx[$i];
+        if (!isset($o['values'][$j])) { return null; }
+        $vals[] = $o['values'][$j];
+        $parts[] = $o['label'] . '：' . $o['values'][$j];
+    }
+    $price = null;
+    $v = json_decode((string)($p['variations'] ?? ''), true);
+    foreach (($v['data'] ?? []) as $d) {
+        $ok = true;
+        foreach ($vals as $i => $val) { if ((string)($d['option' . ($i + 1)] ?? '') !== $val) { $ok = false; break; } }
+        if ($ok) {
+            if (empty($d['stock_unlimited']) && $d['stock'] !== null && (int)$d['stock'] <= 0) { return null; }  // 品切れの組み合わせ
+            if ($d['price'] !== null) { $price = (int)$d['price']; }
+            break;
+        }
+    }
+    return ['text' => implode('／', $parts), 'price' => $price, 'values' => $vals];
+}
+
+/** カートのキー。オプションの無い商品は "商品ID"、ある商品は "商品ID|0-1"（各項目で選んだ番号）。 */
+function kv_cart_key_parse(string $key): array
+{
+    $a = explode('|', $key, 2);
+    return [(int)$a[0], isset($a[1]) && $a[1] !== '' ? array_map('intval', explode('-', $a[1])) : []];
+}
+
 /** カートの中身を商品情報つきで返す。価格は**都度DBから引く**（セッションの値を信じない）。 */
 function kv_cart_lines(): array
 {
     $c = kv_cart_get();
     if (!$c) { return ['lines' => [], 'subtotal' => 0, 'tax' => 0, 'total' => 0, 'count' => 0]; }
-    $ids = array_map('intval', array_keys($c));
+    $ids = array_values(array_unique(array_map(fn($k) => kv_cart_key_parse((string)$k)[0], array_keys($c))));
     $in = implode(',', array_fill(0, count($ids), '?'));
     $st = kv_db()->prepare("SELECT * FROM products WHERE id IN ($in) AND hidden=0");
     $st->execute($ids);
+    $byid = [];
+    foreach ($st->fetchAll() as $p) { $byid[(int)$p['id']] = $p; }
     $lines = [];
     $sub = 0;
     $tax = 0;
-    foreach ($st->fetchAll() as $p) {
-        $qty = max(1, (int)$c[(string)$p['id']]);
-        $unit = (int)$p['price'];
+    foreach ($c as $key => $q) {
+        [$pid, $idx] = kv_cart_key_parse((string)$key);
+        $p = $byid[$pid] ?? null;
+        if (!$p) { continue; }
+        $pick = kv_variation_pick($p, $idx);
+        if ($pick === null) { continue; }   // 選択が足りない・品切れの組み合わせは入れない
+        $qty = max(1, (int)$q);
+        $unit = $pick['price'] ?? (int)$p['price'];
         $rate = ((int)($p['tax_reduce'] ?? 0) === 1) ? 0.08 : 0.10;
         $amt = $unit * $qty;
         $t = (int)floor($amt * $rate);
-        $lines[] = ['product' => $p, 'qty' => $qty, 'unit' => $unit, 'amount' => $amt, 'tax' => $t];
+        $lines[] = ['product' => $p, 'qty' => $qty, 'unit' => $unit, 'amount' => $amt, 'tax' => $t,
+                    'key' => (string)$key, 'opt' => $pick['text']];
         $sub += $amt;
         $tax += $t;
     }
@@ -55,18 +113,27 @@ function kv_page_cart(): void
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!kv_csrf_ok()) { http_response_code(400); echo '不正なリクエストです'; return; }
         $c = kv_cart_get();
+        $okkey = fn($k) => (bool)preg_match('/^\d+(\|\d+(-\d+)*)?$/', (string)$k);
         if (!empty($_POST['add'])) {
-            $id = (string)(int)$_POST['add'];
-            $c[$id] = min(99, (int)($c[$id] ?? 0) + max(1, (int)($_POST['qty'] ?? 1)));
+            $pid = (int)$_POST['add'];
+            $idx = array_map('intval', array_values((array)($_POST['opt'] ?? [])));
+            $p = kv_product($pid);
+            if ($p && kv_variation_pick($p, $idx) === null) {
+                // オプションを選ばずに送られた（または品切れの組み合わせ）。商品ページへ戻す
+                header('Location: ' . kv_url('product/' . $pid) . '?need_option=1');
+                return;
+            }
+            $key = $idx ? $pid . '|' . implode('-', $idx) : (string)$pid;
+            $c[$key] = min(99, (int)($c[$key] ?? 0) + max(1, (int)($_POST['qty'] ?? 1)));
         }
         if (isset($_POST['qty_of']) && is_array($_POST['qty_of'])) {
-            foreach ($_POST['qty_of'] as $id => $q) {
-                $id = (string)(int)$id;
+            foreach ($_POST['qty_of'] as $key => $q) {
+                if (!$okkey($key)) { continue; }
                 $q = (int)$q;
-                if ($q <= 0) { unset($c[$id]); } else { $c[$id] = min(99, $q); }
+                if ($q <= 0) { unset($c[$key]); } else { $c[$key] = min(99, $q); }
             }
         }
-        if (!empty($_POST['remove'])) { unset($c[(string)(int)$_POST['remove']]); }
+        if (!empty($_POST['remove']) && $okkey($_POST['remove'])) { unset($c[(string)$_POST['remove']]); }
         kv_cart_set($c);
         header('Location: ' . kv_url('cart'));
         return;
@@ -97,12 +164,13 @@ function kv_page_cart(): void
                    . '<img src="' . kv_e($img) . '" alt="" style="width:80px;height:80px;object-fit:contain"></a>' : '')
            . '</td>'
            . '<td><a href="' . kv_url('product/' . (int)$p['id']) . '">' . kv_e($p['name']) . '</a>'
+           . ($l['opt'] ? '<div><b>' . kv_e($l['opt']) . '</b></div>' : '')
            . ($p['model_number'] ? '<div class="src">[' . kv_e($p['model_number']) . ']</div>' : '') . '</td>'
            . '<td style="white-space:nowrap">' . number_format($l['unit']) . '円</td>'
-           . '<td><input type="number" name="qty_of[' . (int)$p['id'] . ']" value="' . $l['qty']
+           . '<td><input type="number" name="qty_of[' . kv_e($l['key']) . ']" value="' . $l['qty']
            . '" min="0" max="99" style="width:70px;padding:7px;border:2px solid #cfdae4;border-radius:8px"></td>'
            . '<td style="white-space:nowrap">' . number_format($l['amount']) . '円</td>'
-           . '<td><button class="btn gray" type="submit" name="remove" value="' . (int)$p['id'] . '">削除</button></td></tr>';
+           . '<td><button class="btn gray" type="submit" name="remove" value="' . kv_e($l['key']) . '">削除</button></td></tr>';
     }
     echo '</table></div>'
        . '<p><button class="btn ghost" type="submit">更新</button></p></form>';
@@ -300,6 +368,7 @@ function kv_page_confirm(): void
     foreach ($r['lines'] as $l) {
         $p = $l['product'];
         echo '<tr><td>' . kv_e($p['name'])
+           . ($l['opt'] ? '<div><b>' . kv_e($l['opt']) . '</b></div>' : '')
            . ($p['model_number'] ? '<div class="src">[' . kv_e($p['model_number']) . ']</div>' : '') . '</td>'
            . '<td>' . number_format($l['unit']) . '円</td><td>' . $l['qty'] . '</td>'
            . '<td>' . number_format($l['amount']) . '円</td></tr>';

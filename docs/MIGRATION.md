@@ -51,7 +51,14 @@ heteml の独自ドメイン設定で exdirect.net / www.exdirect.net の行き�
 
 切替前の本番ファイルは `outputs/*.server-before-domain` に退避（outputs は Git 管理外）。
 
-## 踏んだ罠（同じ所で止まらないために）
+## オプション（おちゃのこネットの「オプション」）2026-11-16
+
+- products.variations に API の variations を JSON のまま持つ（scripts/load_variations.py・取り込み時も保存）。
+- 商品ページに選択欄、カートのキーは「商品ID|選んだ番号」。注文明細の商品名に「（吐出口：右方向吐出タイプ）」を付けて残す。
+- **組み合わせ別の価格（variations.data[].price）は本体価格より優先される。** 本体価格を改定したら、
+  組み合わせ別の価格も同じ式で直すこと（2026-11-16 平野製作所の10%値上げを 11039・39649 の組み合わせにも適用）。
+  品切れの組み合わせ（stock 0）は選べない。
+（同じ所で止まらないために）
 
 - **`AddHandler php8.2-script` は exbridge.jp では404になる。** 契約ごとに使える書式が違う。
   `php-script` が安全（exbridge.jp では PHP 8.3.33 になる）。

@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS products (
   maker_id      INTEGER,
   description   TEXT,
   image_url     TEXT,
+  variations    TEXT,           -- おちゃのこの「オプション」（APIの variations をJSONのまま）
   tax_reduce    INTEGER DEFAULT 0,
   updated_at    TEXT,
   imported_at   TEXT
@@ -153,12 +154,13 @@ def build():
         cur.execute(
             "INSERT OR REPLACE INTO products (id,name,model_number,gtin,price,price_unspecified,"
             "list_price,stock,stock_unlimited,hidden,category_id,maker_id,description,image_url,"
-            "tax_reduce,updated_at,imported_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "tax_reduce,updated_at,imported_at,variations) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (p["id"], p.get("name"), p.get("model_number"), p.get("gtin"), p.get("price"),
              1 if p.get("price_unspecified") else 0, p.get("list_price"), p.get("stock"),
              1 if p.get("stock_unlimited") else 0, 1 if p.get("hidden") else 0,
              cat.get("id"), mine, desc, img, 1 if p.get("tax_reduce") else 0,
-             p.get("updated_at"), now))
+             p.get("updated_at"), now,
+             json.dumps(p["variations"], ensure_ascii=False) if (p.get("variations") or {}).get("options") else None))
         kept += 1
         if n % 5000 == 0:
             con.commit()
