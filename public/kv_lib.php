@@ -82,10 +82,13 @@ function kv_model_display($mn, $name): string
 {
     $mn = trim((string)$mn); $name = (string)$name;
     if ($mn === '') { return ''; }
-    if (mb_stripos($name, $mn) !== false) { return $mn; }
+    // 比べるときは全角半角・大小・空白・ハイフン等の違いを無視する（FS-04N-MS と商品名の「FS-04N MS」は同じ）
+    $n = static fn(string $s): string => preg_replace('/[^0-9a-z]/', '', strtolower(mb_convert_kana($s, 'as', 'UTF-8')));
+    $nn = $n($name);
+    if ($n($mn) !== '' && strpos($nn, $n($mn)) !== false) { return $mn; }
     // 記号の後ろが JAN（45/49 で始まる13桁）のものは型番ではないので出さない
     if (preg_match('/^[A-Z]{2,5}\d{0,2}-(.+)$/', $mn, $m) && !preg_match('/^4[59]\d{11}$/', $m[1])
-        && mb_stripos($name, $m[1]) !== false) { return $m[1]; }
+        && $n($m[1]) !== '' && strpos($nn, $n($m[1])) !== false) { return $m[1]; }
     return '';
 }
 
