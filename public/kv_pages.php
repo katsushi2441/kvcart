@@ -840,7 +840,9 @@ function kv_page_contact(): void
         if ($p) {
             $in['body'] = '【お問い合わせ商品】' . $p['name'] . "\n"
                 . ((($mdl = kv_model_display($p['model_number'], $p['name'])) !== '') ? '型番: ' . $mdl . "\n" : '')
-                . '商品ページ: ' . kv_site_url('product/' . $pid) . "\n\n";
+                . '商品ページ: ' . kv_site_url('product/' . $pid) . "\n\n"
+                // 価格を出していない商品は、価格・納期の見積もりに要ることを先に聞く（2026-11-17）
+                . (kv_price_incl($p) === null ? "【価格・納期のお見積もり】\nご希望の数量: \n送り先（都道府県・市区町村）: \n\n" : '');
         }
     }
 

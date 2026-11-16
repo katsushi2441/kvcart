@@ -361,7 +361,9 @@ function kv_page_product(int $id): void
     if (($mdl = kv_model_display($p['model_number'], $p['name'])) !== '') { echo '<p class="src">型番 ' . kv_e($mdl) . '</p>'; }
     if (kv_jan($p) !== '') { echo '<p class="src">JANコード ' . kv_e(kv_jan($p)) . '</p>'; }
     if ($incl === null) {
-        echo '<p class="price-big"><small>価格はお問い合わせください</small></p>';
+        // 価格を出さずに、価格と納期を問い合わせてもらう商品（古河電池・テラル・ウシオ電機など・2026-11-17）
+        echo '<p class="price-big"><small>価格・納期はお問い合わせください</small></p>'
+           . '<p class="src">ご希望の数量と送り先（都道府県・市区町村）をお知らせいただければ、価格と納期をご案内します。</p>';
     } else {
         if ($p['list_price'] && (int)$p['list_price'] > (int)$p['price']) {
             echo '<p class="strike">メーカー希望小売価格 ' . number_format((int)$p['list_price']) . '円</p>';
@@ -410,7 +412,7 @@ function kv_page_product(int $id): void
            . 'style="width:70px;padding:7px;border:2px solid #cfdae4;border-radius:8px"></label> '
            . '<button class="btn" type="submit">カートに入れる</button></form>';
     } else {
-        echo '<p><a class="btn ghost" href="' . kv_url('contact') . '?pid=' . (int)$p['id'] . '">この商品について問い合わせる</a></p>';
+        echo '<p><a class="btn" href="' . kv_url('contact') . '?pid=' . (int)$p['id'] . '">価格・納期を問い合わせる</a></p>';
     }
     echo '<p class="src" style="margin-top:12px">' . kv_e(kv_shop('ship_note')) . '</p>';
     echo '</div></div></div>';
