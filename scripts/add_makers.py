@@ -61,7 +61,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", required=True)
     ap.add_argument("makers", nargs="+", help="メーカー名=slug")
+    ap.add_argument("--only", help="移す商品だけを並べた JSON（[{id, price, list_price}]）。価格はこの値で入れる")
     a = ap.parse_args()
+    only = None
+    if a.only:
+        only = {int(x["id"]): x for x in json.load(open(a.only, encoding="utf-8"))}
     want = dict(m.split("=", 1) for m in a.makers)
     con = sqlite3.connect(a.db)
     cur = con.cursor()
@@ -87,6 +91,13 @@ def main():
         cur.execute("INSERT INTO makers (id,slug,name,sort) VALUES (?,?,?,?)", (gid, want[name], name, sort))
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
     added = skipped = img_ok = img_ng = 0
+    if only is not None:
+        found = [(p, g) for p, g in found if int(p["id"]) in only]
+        for p, _ in found:
+            o = only[int(p["id"])]
+            p["price"] = o.get("price", p.get("price"))
+            p["list_price"] = o.get("list_price", p.get("list_price"))
+        print("--only で移す商品:", len(found))
     for p, gid in found:
         if cur.execute("SELECT 1 FROM products WHERE id=?", (p["id"],)).fetchone():
             skipped += 1

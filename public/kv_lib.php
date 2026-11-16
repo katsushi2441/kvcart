@@ -35,8 +35,23 @@ function kv_db(): PDO
         // 作るので、書き込み権限が無いと読むだけで "attempt to write a readonly database"
         // になる（heteml で実際に踏んだ。2026-09-14）。DELETE ジャーナルなら読みだけで済む。
         try { $pdo->exec('PRAGMA journal_mode=DELETE'); } catch (PDOException $e) { /* 読み取り専用でも続行 */ }
+        // 検索で全角・半角、英字の大小を区別しないため、SQL から kv_norm() を呼べるようにする（2026-11-16）
+        if (method_exists($pdo, 'sqliteCreateFunction')) {
+            $pdo->sqliteCreateFunction('kvnorm', fn($s) => kv_norm((string)$s), 1);
+        }
     }
     return $pdo;
+}
+
+/**
+ * 検索用に文字をそろえる。英数字・記号・空白は半角、半角カナは全角、英字は小文字にする。
+ * 「ＬＥＤ」「LED」「led」が同じになる。ハイフンに似た記号（－‐−―）も「-」にそろえる。
+ */
+function kv_norm(string $s): string
+{
+    $s = mb_convert_kana($s, 'asKV', 'UTF-8');
+    $s = str_replace(["\u{2010}", "\u{2011}", "\u{2012}", "\u{2013}", "\u{2212}", "\u{2015}"], '-', $s);
+    return mb_strtolower($s, 'UTF-8');
 }
 
 function kv_url(string $path = ''): string
@@ -136,9 +151,16 @@ function kv_products(array $f = [], int $page = 1, int $per = 24): array
     if (!empty($f['maker_id']))    { $w[] = 'maker_id=?';    $a[] = (int)$f['maker_id']; }
     if (!empty($f['category_id'])) { $w[] = 'category_id=?'; $a[] = (int)$f['category_id']; }
     if (!empty($f['q'])) {
-        $w[] = '(name LIKE ? OR model_number LIKE ?)';
-        $a[] = '%' . $f['q'] . '%';
-        $a[] = '%' . $f['q'] . '%';
+        // 空白で区切った語は全部を含むものを探す。全角・半角、英字の大小は区別しない
+        $terms = preg_split('/\s+/u', trim(kv_norm((string)$f['q']))) ?: [];
+        $useFn = method_exists(kv_db(), 'sqliteCreateFunction');
+        foreach (array_slice(array_filter($terms, 'strlen'), 0, 5) as $t) {
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $t) . '%';
+            $w[] = $useFn ? "(kvnorm(name) LIKE ? ESCAPE '\\' OR kvnorm(model_number) LIKE ? ESCAPE '\\')"
+                          : "(name LIKE ? ESCAPE '\\' OR model_number LIKE ? ESCAPE '\\')";
+            $a[] = $like;
+            $a[] = $like;
+        }
     }
     $sql = 'FROM products WHERE ' . implode(' AND ', $w);
     $st = kv_db()->prepare('SELECT COUNT(*) ' . $sql);
