@@ -84,6 +84,7 @@ function kv_route(string $path, int $page): void
         case '/terms':
         case '/privacy':  kv_page_static(ltrim($path, '/'), $path); return;
         case '/manual':   kv_page_manual(); return;
+        case '/supplier': kv_page_supplier(); return;   // 商材募集（X-Direct のときだけ）
     }
     // メーカーのslugでも引けるようにしておく（exbridge.jp/xdirect/ からの導線）
     if (preg_match('#^/maker/([a-z0-9_-]+)$#', $path, $m)) {
@@ -492,6 +493,7 @@ function kv_sitemap(): void
     foreach (['/makers', '/info', '/help', '/terms', '/privacy', '/page/1', '/page/16'] as $sp) {
         $u[] = [$sp, '2026-11-15'];
     }
+    if (kv_is_xdirect()) { $u[] = ['/supplier', '2026-11-16']; }
     header('Content-Type: application/xml; charset=utf-8');
     $o = kv_origin();
     echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
@@ -534,13 +536,14 @@ function kv_llms(): void
        . "- [ご利用案内]($o/help): 注文の流れ・送料・お支払い（銀行振込・クレジットカード）\n"
        . "- [特定商取引法表示]($o/info): 販売事業者・返品・お届け\n"
        . "- [よくあるご質問]($o/page/16)\n"
-       . "- [お問い合わせ]($o/contact): 掲載していない商品の見積もりも受け付けます\n\n"
+       . "- [お問い合わせ]($o/contact): 掲載していない商品の見積もりも受け付けます\n"
+       . (kv_is_xdirect() ? "- [商材募集]($o/supplier): 工具・機械・設備のメーカー・問屋さまの商材を募集（メーカー直送で販売）\n" : '') . "\n"
        . "## メーカー\n\n";
     foreach (kv_makers() as $mk) {
         echo '- [' . $mk['name'] . "の商品一覧]($o/product-group/" . (int)$mk['id'] . ")\n";
     }
     echo "\n## 注文について\n\n"
        . "- 注文後に在庫・納期・送料を確認してご連絡します。\n"
-       . "- お支払いは銀行振込（前払い）と、クレジットカード（確認後にお送りするお支払いページから）。\n"
+       . "- お支払いは銀行振込（前払い。在庫・納期の確認後に振込先をご案内）と、クレジットカード（ご注文時のお支払い画面から）。\n"
        . "- 価格は税込表示。商品ページの価格が最新です。\n";
 }

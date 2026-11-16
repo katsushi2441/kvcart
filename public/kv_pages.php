@@ -953,3 +953,109 @@ function kv_code_prefixes(int $min = 20): string
     $list = array_map(static fn($r) => $r['p'] . '-', $rows);
     return '「' . kv_e(implode(', ', $list)) . '」';
 }
+
+/**
+ * 商材募集（/supplier・2026-11-16）。メーカー・問屋に、X-Direct での取り扱いを呼びかける。
+ * 当社の店（kv_is_xdirect）のときだけ出す。送信は kv_mail() で店のアドレスへ。
+ */
+function kv_page_supplier(): void
+{
+    if (!kv_is_xdirect()) { http_response_code(404); kv_head('ページが見つかりません', '', '/supplier', ['noindex' => true]); echo '<div class="wrap"><p>ページが見つかりません。</p></div>'; kv_footer(); return; }
+    $to = kv_shop('email');
+    $f = ['company' => '', 'name' => '', 'email' => '', 'tel' => '', 'genre' => '', 'url' => '', 'pricelist' => '', 'body' => ''];
+    $sent = false; $err = '';
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        foreach (array_keys($f) as $k) { $f[$k] = trim((string)($_POST[$k] ?? '')); }
+        if (!kv_csrf_ok()) {
+            $err = '時間が経ちすぎたようです。お手数ですがもう一度送信してください。';
+        } elseif ($f['company'] === '' || $f['name'] === '' || $f['email'] === '' || $f['genre'] === '') {
+            $err = '会社名・ご担当者名・メールアドレス・取り扱い商品のジャンルをご記入ください。';
+        } elseif (!filter_var($f['email'], FILTER_VALIDATE_EMAIL)) {
+            $err = 'メールアドレスの形をご確認ください。';
+        } else {
+            $reply = str_replace(["\r", "\n"], '', $f['email']);
+            $body = "会社名: {$f['company']}\nご担当者: {$f['name']}\nメール: {$f['email']}\n電話: {$f['tel']}\n"
+                  . "取り扱い商品のジャンル: {$f['genre']}\nホームページ: {$f['url']}\n価格表: {$f['pricelist']}\n"
+                  . "受信日時: " . date('Y-m-d H:i:s') . "\n------------------------------------\n" . $f['body'] . "\n";
+            $h = 'From: ' . mb_encode_mimeheader(kv_shop('name')) . ' <' . $to . '>' . "\r\n"
+               . 'Reply-To: ' . $reply . "\r\n" . 'Content-Type: text/plain; charset=UTF-8' . "\r\n";
+            $sent = kv_mail($to, mb_encode_mimeheader('【商材募集】' . $f['company'] . ' ' . $f['name'] . ' 様'), $body, $h);
+            if (!$sent) { $err = '送信できませんでした。お手数ですが ' . $to . ' 宛にメールでご連絡ください。'; }
+        }
+    }
+
+    $s = kv_stats();
+    $makers = array_slice(array_map(fn($m) => $m['name'], kv_makers()), 0, 20);
+    $desc = '工具・機械・設備のメーカー・問屋さまへ。X-Direct（取扱 ' . number_format($s['products'])
+          . '点）で、在庫を持たずにメーカー直送で全国の法人へ販売しませんか。取り扱いの条件と流れ、お問い合わせ。';
+    $jsonld = ['@context' => 'https://schema.org', '@type' => 'WebPage', 'name' => '商材募集｜メーカー・問屋さまへ',
+               'description' => $desc, 'url' => kv_origin() . '/supplier',
+               'publisher' => ['@type' => 'Organization', 'name' => kv_shop('company')]];
+    kv_head('商材募集｜メーカー・問屋さまへ', $desc, '/supplier', ['jsonld' => $jsonld]);
+    echo '<style>.sup-hero{background:linear-gradient(135deg,#0e5f8a,#127a7a);color:#fff;border-radius:14px;padding:26px 22px;margin:8px 0 18px}'
+       . '.sup-hero h1{color:#fff;font-size:26px;line-height:1.4;margin:0 0 8px}.sup-hero p{margin:0;font-size:15px;opacity:.95}'
+       . '.sup-hero .btn{margin-top:14px;background:#ffb400;color:#2a1d00;border:0}'
+       . '.sup-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 18px}'
+       . '.sup-nums div{background:#fff;border:1px solid #e5ebf1;border-radius:12px;padding:14px;text-align:center}'
+       . '.sup-nums b{display:block;font-size:24px;color:#0e5f8a}.sup-nums span{font-size:12.5px;color:#5b6b78}'
+       . '.sup-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:0 0 18px}'
+       . '.sup-cards div{background:#fff;border:1px solid #e5ebf1;border-left:5px solid #127a7a;border-radius:12px;padding:14px 16px}'
+       . '.sup-cards h3{margin:0 0 6px;font-size:16px}.sup-cards p{margin:0;font-size:14px;line-height:1.7}'
+       . '.sup-flow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:0 0 18px;counter-reset:f}'
+       . '.sup-flow div{background:#f5f9fa;border:1px solid #dde7ea;border-radius:10px;padding:12px;font-size:13.5px;line-height:1.6}'
+       . '.sup-flow div:before{counter-increment:f;content:"STEP " counter(f);display:block;font-weight:700;color:#127a7a;font-size:12px}'
+       . '.sup-makers{font-size:13.5px;line-height:1.9;color:#33414d}'
+       . '@media(max-width:640px){.sup-hero h1{font-size:21px}.sup-nums{gap:6px}.sup-nums div{padding:10px 4px}.sup-nums b{font-size:18px}.sup-cards,.sup-flow{grid-template-columns:1fr}}</style>';
+    echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a> › 商材募集</nav>';
+
+    if ($sent) {
+        echo '<div class="panel"><h1>お問い合わせを受け付けました</h1><p>ありがとうございます。内容を拝見のうえ、ご記入のメールアドレスへご連絡します。</p>'
+           . '<p><a class="btn" href="' . kv_url('') . '">トップへ</a></p></div></div>';
+        kv_footer();
+        return;
+    }
+
+    echo '<section class="sup-hero"><h1>工具・機械・設備の商材を募集しています</h1>'
+       . '<p>メーカー・問屋さまへ。在庫を持たず、メーカー直送で、全国の法人のお客様に販売します。</p>'
+       . '<a class="btn" href="#supplier-form">取り扱いの相談をする</a></section>';
+
+    echo '<div class="sup-nums"><div><b>' . number_format($s['products']) . '</b><span>掲載商品</span></div>'
+       . '<div><b>' . (int)$s['makers'] . '社</b><span>取り扱いメーカー</span></div>'
+       . '<div><b>2004年</b><span>運営会社の創業</span></div></div>';
+
+    echo '<div class="panel"><h2>X-Direct について</h2>'
+       . '<p>X-Direct は、株式会社エクスブリッジ（名古屋）が運営する、工具・機械・計測機器・厨房機器・バッテリーなどの通信販売です。'
+       . '工場・建設・農業・飲食店など、法人のお客様からのご注文が中心です。</p>'
+       . '<p class="sup-makers">主な取り扱いメーカー：' . kv_e(implode('、', $makers)) . '</p></div>';
+
+    echo '<h2>メーカー・問屋さまにとっての良いところ</h2><div class="sup-cards">'
+       . '<div><h3>在庫を持たずに販売できます</h3><p>ご注文が入ったら、メーカー・問屋さまからお客様へ直送していただきます。当社への発注は1台から行います。</p></div>'
+       . '<div><h3>無理な値引きをしなくても売れます</h3><p>モールの出品手数料や、ネットショップ作成サービスの月額のシステム利用料がかからない自社システムで運営しているため、値崩れするような安売りをしなくても価格で選ばれます。</p></div>'
+       . '<div><h3>価格の改定にすぐ対応します</h3><p>価格表（PDF・Excel）をいただければ、AIを使って掲載中の商品の価格をまとめて改定します。電菱さまの価格表では、211件を1日で改定しました。</p></div>'
+       . '<div><h3>検索とAIの答えに載ります</h3><p>商品ページは、Google の検索と、ChatGPT などのAIの答えに出るように作っています。型番で探しているお客様に届きます。</p></div>'
+       . '</div>';
+
+    echo '<div class="panel"><h2>取り扱いの条件</h2><ul>'
+       . '<li>お客様へのメーカー直送（または問屋さまからの直送）に対応できること</li>'
+       . '<li>法人向けの卸価格（仕切り）をご提示いただけること</li>'
+       . '<li>価格表と、商品の画像・仕様（カタログやホームページで可）をご提供いただけること</li></ul></div>';
+
+    echo '<h2>取り扱いまでの流れ</h2><div class="sup-flow">'
+       . '<div>下のフォームからお問い合わせ</div><div>価格表・商品情報のご提供</div>'
+       . '<div>X-Direct に掲載（数日）</div><div>ご注文が入ったら発注・直送</div></div>';
+
+    if ($err !== '') { echo '<div class="alert">' . kv_e($err) . '</div>'; }
+    $opt = function (string $v) use ($f) { return '<option' . ($f['pricelist'] === $v ? ' selected' : '') . '>' . kv_e($v) . '</option>'; };
+    echo '<form method="post" class="panel" id="supplier-form"><h2>取り扱いのご相談</h2>'
+       . '<input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '"><table class="formtbl">'
+       . '<tr><th>会社名<span class="req">必須</span></th><td><input type="text" name="company" value="' . kv_e($f['company']) . '" required></td></tr>'
+       . '<tr><th>ご担当者名<span class="req">必須</span></th><td><input type="text" name="name" value="' . kv_e($f['name']) . '" required></td></tr>'
+       . '<tr><th>メールアドレス<span class="req">必須</span></th><td><input type="email" name="email" value="' . kv_e($f['email']) . '" required></td></tr>'
+       . '<tr><th>電話番号</th><td><input type="tel" name="tel" value="' . kv_e($f['tel']) . '"></td></tr>'
+       . '<tr><th>取り扱い商品のジャンル<span class="req">必須</span></th><td><input type="text" name="genre" value="' . kv_e($f['genre']) . '" required><div class="hint">例：電動工具、ポンプ、LED照明、厨房機器</div></td></tr>'
+       . '<tr><th>ホームページのURL</th><td><input type="text" name="url" value="' . kv_e($f['url']) . '"></td></tr>'
+       . '<tr><th>価格表</th><td><select name="pricelist"><option value="">選んでください</option>' . $opt('あり（PDF）') . $opt('あり（Excel）') . $opt('あり（その他）') . $opt('なし') . '</select></td></tr>'
+       . '<tr><th>メッセージ</th><td><textarea name="body" rows="6">' . kv_e($f['body']) . '</textarea></td></tr>'
+       . '</table><p style="margin-top:14px"><button class="btn" type="submit">送信する</button></p></form></div>';
+    kv_footer();
+}
