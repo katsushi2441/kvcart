@@ -92,6 +92,26 @@ function kv_model_display($mn, $name): string
     return '';
 }
 
+/** 商品の JAN（gtin が 8桁・13桁の数字のときだけ）。 */
+function kv_jan(array $p): string
+{
+    $g = trim((string)($p['gtin'] ?? ''));
+    return preg_match('/^(\d{8}|\d{13})$/', $g) ? $g : '';
+}
+
+/**
+ * 商品ページの <title>。商品名から【送料無料】【破格値】のような飾りを外し、
+ * JAN があって商品名に入っていなければ末尾に「JAN 4937…」を足す（JAN で検索する人向け・2026-11-17）。
+ */
+function kv_product_title(array $p): string
+{
+    $t = trim(preg_replace('/\s+/u', ' ', preg_replace('/【[^】]*】/u', ' ', (string)$p['name'])));
+    if ($t === '') { $t = (string)$p['name']; }
+    $jan = kv_jan($p);
+    if ($jan !== '' && strpos($t, $jan) === false) { $t .= ' JAN ' . $jan; }
+    return $t;
+}
+
 function kv_e($s): string
 {
     return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
@@ -177,8 +197,10 @@ function kv_products(array $f = [], int $page = 1, int $per = 24): array
         $useFn = method_exists(kv_db(), 'sqliteCreateFunction');
         foreach (array_slice(array_filter($terms, 'strlen'), 0, 5) as $t) {
             $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $t) . '%';
-            $w[] = $useFn ? "(kvnorm(name) LIKE ? ESCAPE '\\' OR kvnorm(model_number) LIKE ? ESCAPE '\\')"
-                          : "(name LIKE ? ESCAPE '\\' OR model_number LIKE ? ESCAPE '\\')";
+            // JAN（gtin）でも引けるようにする（2026-11-17・JANコードで探す人がいる）
+            $w[] = $useFn ? "(kvnorm(name) LIKE ? ESCAPE '\\' OR kvnorm(model_number) LIKE ? ESCAPE '\\' OR gtin LIKE ? ESCAPE '\\')"
+                          : "(name LIKE ? ESCAPE '\\' OR model_number LIKE ? ESCAPE '\\' OR gtin LIKE ? ESCAPE '\\')";
+            $a[] = $like;
             $a[] = $like;
             $a[] = $like;
         }

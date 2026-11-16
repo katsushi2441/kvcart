@@ -274,7 +274,7 @@ function kv_page_search(int $page): void
     $r = $q === '' ? ['items' => [], 'total' => 0, 'page' => 1, 'per' => 24, 'pages' => 0]
                    : kv_products(['q' => $q], $page, 24);
     kv_head($q === '' ? '商品検索' : '「' . $q . '」の検索結果',
-            '商品名・型番で検索できます。', '/search', ['noindex' => true]);
+            '商品名・型番・JANコードで検索できます。', '/search', ['noindex' => true]);
     echo '<div class="wrap"><h1>' . ($q === '' ? '商品検索' : '「' . kv_e($q) . '」の検索結果') . '</h1>';
     if ($q !== '') { echo '<p class="src">' . number_format($r['total']) . '件</p>'; }
     echo '<div class="grid">';
@@ -301,6 +301,7 @@ function kv_page_product(int $id): void
         '@context' => 'https://schema.org', '@type' => 'Product',
         'name' => $p['name'], 'sku' => $p['model_number'] ?: (string)$p['id'],
         'mpn' => kv_model_display($p['model_number'], $p['name']) ?: null,
+        (strlen(kv_jan($p)) === 8 ? 'gtin8' : 'gtin13') => kv_jan($p) ?: null,
         'image' => $p['image_url'] ? kv_abs((string)$p['image_url']) : null,
         'url' => kv_base_url() . '/product/' . $id,
         'brand' => $mk ? ['@type' => 'Brand', 'name' => $mk['name']] : null,
@@ -321,7 +322,11 @@ function kv_page_product(int $id): void
         ],
     ];
     if (isset($jsonld['offers']) && is_array($jsonld['offers'])) { $jsonld['offers'] = array_filter($jsonld['offers'], fn($v) => $v !== null); }
-    kv_head($p['name'], $desc, '/product/' . $id,
+    // 説明文の頭に型番・JAN を入れる（検索結果に出る文。JAN で探す人向け）
+    $lead = trim((($m0 = kv_model_display($p['model_number'], $p['name'])) !== '' ? '型番 ' . $m0 . ' ' : '')
+               . (kv_jan($p) !== '' ? 'JAN ' . kv_jan($p) : ''));
+    if ($lead !== '') { $desc = mb_substr($lead . '。' . $desc, 0, 160); }
+    kv_head(kv_product_title($p), $desc, '/product/' . $id,
             ['og_type' => 'product', 'image' => $p['image_url'], 'jsonld' => array_filter($jsonld)]);
     echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a>'
        . ($mk ? ' › <a href="' . kv_url('product-group/' . (int)$mk['id']) . '">' . kv_e($mk['name']) . '</a>' : '')
@@ -331,6 +336,7 @@ function kv_page_product(int $id): void
     echo '<div class="img">' . ($p['image_url'] ? '<img src="' . kv_e(kv_img($p['image_url'])) . '" alt="' . kv_e($p['name']) . '">' : '') . '</div>';
     echo '<div><div class="panel">';
     if (($mdl = kv_model_display($p['model_number'], $p['name'])) !== '') { echo '<p class="src">型番 ' . kv_e($mdl) . '</p>'; }
+    if (kv_jan($p) !== '') { echo '<p class="src">JANコード ' . kv_e(kv_jan($p)) . '</p>'; }
     if ($incl === null) {
         echo '<p class="price-big"><small>価格はお問い合わせください</small></p>';
     } else {
