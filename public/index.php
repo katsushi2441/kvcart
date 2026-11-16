@@ -140,6 +140,14 @@ function kv_page_top(): void
            . ' <span class="src">' . number_format((int)$mk['cnt']) . '</span></a>';
     }
     echo '</div>';
+    // 人気商品＝Google でよく探されている販売中の商品（2026-11-17 ユーザー指示）。
+    // kv_data/search_popular.json（店ごとに Search Console の数字から作る）が無い店では出さない
+    $sp = kv_search_popular(16);
+    if ($sp) {
+        echo '<h2>人気商品</h2><p class="src">検索でよく探されている商品です。</p><div class="grid">';
+        foreach ($sp as $p) { kv_card($p, '人気'); }
+        echo '</div>';
+    }
     // 最近売れた商品・よく売れている商品（2026-11-16 ユーザー指示）
     [$recent, $popular] = kv_sales_lists(12);
     if ($recent) {
@@ -156,6 +164,21 @@ function kv_page_top(): void
     foreach ($r['items'] as $p) { kv_card($p); }
     echo '</div></div>';
     kv_footer();
+}
+
+/** トップの「人気商品」。kv_data/search_popular.json の並び順で、今売っている（表示している）商品だけを返す。 */
+function kv_search_popular(int $n = 16): array
+{
+    $f = __DIR__ . '/kv_data/search_popular.json';
+    if (!is_file($f)) { return []; }
+    $d = json_decode((string)file_get_contents($f), true);
+    $out = [];
+    foreach (($d['items'] ?? []) as $it) {
+        $p = kv_product((int)($it['id'] ?? 0));
+        if ($p) { $out[] = $p; }
+        if (count($out) >= $n) { break; }
+    }
+    return $out;
 }
 
 /**
