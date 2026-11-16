@@ -85,6 +85,7 @@ function kv_route(string $path, int $page): void
         case '/privacy':  kv_page_static(ltrim($path, '/'), $path); return;
         case '/manual':   kv_page_manual(); return;
         case '/supplier': kv_page_supplier(); return;   // 商材募集（X-Direct のときだけ）
+        case '/why-low-price': kv_page_why_low_price(); return;   // Amazon・楽天・Yahoo!ショッピングより安くできる理由（2026-11-17）
     }
     // メーカーのslugでも引けるようにしておく（exbridge.jp/xdirect/ からの導線）
     if (preg_match('#^/maker/([a-z0-9_-]+)$#', $path, $m)) {
@@ -237,6 +238,36 @@ function kv_page_makers(): void
     kv_footer();
 }
 
+/**
+ * メーカーページに出す事実（2026-11-17・SEO/AEO/GEO 強化）。すべて DB の実データから作る（推測で書かない）。
+ * 分類ごとの点数・価格帯（税込）・価格を出していない点数・よく探されている型番（kv_data/maker_popular.json）。
+ */
+function kv_maker_facts(int $id): array
+{
+    $db = kv_db();
+    $cats = $db->prepare('SELECT c.id, c.name, COUNT(*) AS n FROM products p JOIN categories c ON c.id=p.category_id
+                           WHERE p.maker_id=? AND p.hidden=0 GROUP BY c.id ORDER BY n DESC');
+    $cats->execute([$id]);
+    $pr = $db->prepare('SELECT MIN(price) AS lo, MAX(price) AS hi, SUM(price IS NULL OR price=0) AS ask, COUNT(*) AS n
+                         FROM products WHERE maker_id=? AND hidden=0');
+    $pr->execute([$id]);
+    $p = $pr->fetch() ?: [];
+    $pop = [];
+    $f = __DIR__ . '/kv_data/maker_popular.json';
+    if (is_file($f)) {
+        $d = json_decode((string)file_get_contents($f), true);
+        foreach (($d['makers'][(string)$id] ?? []) as $it) {
+            $q = kv_product((int)$it['id']);
+            if ($q) { $pop[] = $q; }
+            if (count($pop) >= 8) { break; }
+        }
+    }
+    $rate = 1.10;
+    return ['cats' => $cats->fetchAll(), 'n' => (int)($p['n'] ?? 0), 'ask' => (int)($p['ask'] ?? 0),
+            'lo' => $p['lo'] ? (int)floor((int)$p['lo'] * $rate) : null, 'hi' => $p['hi'] ? (int)floor((int)$p['hi'] * $rate) : null,
+            'popular' => $pop];
+}
+
 function kv_page_group(int $id, int $page): void
 {
     $mk = kv_maker($id);
@@ -251,16 +282,78 @@ function kv_page_group(int $id, int $page): void
         return;
     }
     $r = kv_products(['maker_id' => $id], $page, 24);
-    kv_head($mk['name'] . 'の商品一覧',
-            $mk['name'] . 'の取扱商品' . number_format($r['total']) . '点。直送・格安で。',
-            '/product-group/' . $id);
+    $fx = kv_maker_facts($id);
+    $name = (string)$mk['name'];
+    $shop = kv_shop('name');
+    $catNames = array_map(fn($c) => (string)$c['name'], array_slice($fx['cats'], 0, 3));
+    $catText = $catNames ? implode('、', $catNames) : '';
+    $allAsk = $fx['n'] > 0 && $fx['ask'] === $fx['n'];
+    $priceText = $allAsk ? '価格・納期はお問い合わせください'
+               : ($fx['lo'] !== null ? '税込' . number_format($fx['lo']) . '円〜' . number_format($fx['hi']) . '円' : '');
+    $popModels = array_values(array_filter(array_map(fn($q) => kv_model_display($q['model_number'], $q['name']), $fx['popular'])));
+    // 冒頭の要約（AI の回答に引用されやすい、事実だけの短い文）
+    $lead = $shop . 'では、' . $name . 'の' . ($catText !== '' ? $catText . 'などの' : '') . '商品を' . number_format($r['total']) . '点取り扱っています。'
+          . ($allAsk ? '価格と納期は、数量と送り先をお知らせいただければご案内します。'
+                     : ($priceText !== '' ? '価格は' . $priceText . 'です。' : ''))
+          . 'メーカー・仕入先からの直送で、送料は原則無料です。';
+    $title = $name . 'の商品一覧' . ($catText !== '' ? '（' . $catText . '）' : '') . ' ' . number_format($r['total']) . '点'
+           . ($page > 1 ? '・' . $page . 'ページ目' : '');
+    $desc = mb_substr($lead . ($popModels ? 'よく探されている型番: ' . implode('、', array_slice($popModels, 0, 5)) . '。' : ''), 0, 160);
+    $path = '/product-group/' . $id . ($page > 1 ? '?p=' . $page : '');
+    $faq = [
+        [$name . 'の商品はどこで買えますか？', $shop . '（' . kv_origin() . '）で' . $name . 'の商品を' . number_format($r['total']) . '点取り扱っています。'
+            . ($allAsk ? '価格・納期は商品ページの「価格・納期を問い合わせる」からお問い合わせください。' : '商品ページからご注文いただけます。')],
+        ['送料はかかりますか？', kv_shop('ship_note')],
+        ['支払い方法は？', '銀行振込（前払い。在庫・納期を確認してから振込先をご案内します）と、クレジットカードがご利用いただけます。'],
+        ['納期はどのくらいですか？', 'ご注文・お問い合わせのあと、メーカー・仕入先に在庫と納期を確認してメールでご連絡します。'],
+        ['Amazon・楽天・Yahoo!ショッピングより安くできるのはなぜですか？', kv_low_price_reason()],
+        ['掲載されていない' . $name . 'の商品も買えますか？', '掲載していない型番も、お問い合わせいただければお見積もりします。'],
+    ];
+    $o = kv_origin();
+    $jsonld = ['@context' => 'https://schema.org', '@graph' => [
+        ['@type' => 'CollectionPage', 'name' => $name . 'の商品一覧', 'url' => $o . $path, 'description' => $desc,
+         'about' => ['@type' => 'Brand', 'name' => $name],
+         'isPartOf' => ['@type' => 'WebSite', 'name' => $shop, 'url' => $o . '/']],
+        ['@type' => 'BreadcrumbList', 'itemListElement' => [
+            ['@type' => 'ListItem', 'position' => 1, 'name' => 'トップ', 'item' => $o . '/'],
+            ['@type' => 'ListItem', 'position' => 2, 'name' => 'メーカー一覧', 'item' => $o . '/makers'],
+            ['@type' => 'ListItem', 'position' => 3, 'name' => $name, 'item' => $o . '/product-group/' . $id]]],
+        ['@type' => 'ItemList', 'numberOfItems' => (int)$r['total'], 'itemListElement' => array_values(array_map(
+            fn($q, $k) => ['@type' => 'ListItem', 'position' => ($page - 1) * 24 + $k + 1, 'url' => $o . '/product/' . (int)$q['id'], 'name' => (string)$q['name']],
+            $r['items'], array_keys($r['items'])))],
+        ['@type' => 'FAQPage', 'mainEntity' => array_map(fn($x) => ['@type' => 'Question', 'name' => $x[0],
+            'acceptedAnswer' => ['@type' => 'Answer', 'text' => $x[1]]], $faq)],
+    ]];
+    kv_head($title, $desc, $path, ['jsonld' => $jsonld]);
     echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a> › '
-       . '<a href="' . kv_url('makers') . '">メーカー</a> › ' . kv_e($mk['name']) . '</nav>'
-       . '<h1>' . kv_e($mk['name']) . '</h1>'
-       . '<p class="src">' . number_format($r['total']) . '点</p><div class="grid">';
-    foreach ($r['items'] as $p) { kv_card($p); }
+       . '<a href="' . kv_url('makers') . '">メーカー</a> › ' . kv_e($name) . '</nav>'
+       . '<h1>' . kv_e($name) . 'の商品一覧</h1>';
+    if ($page === 1) {
+        echo '<p class="lead">' . kv_e($lead) . '</p>';
+        if ($fx['cats']) {
+            echo '<h2>' . kv_e($name) . 'の取扱分類</h2><div class="makers">';
+            foreach ($fx['cats'] as $c) {
+                echo '<a href="' . kv_url('product-list/' . (int)$c['id']) . '">' . kv_e($c['name'])
+                   . ' <span class="src">' . number_format((int)$c['n']) . '</span></a>';
+            }
+            echo '</div>';
+        }
+        if ($fx['popular']) {
+            echo '<h2>よく探されている' . kv_e($name) . 'の商品</h2><div class="grid">';
+            foreach ($fx['popular'] as $q) { kv_card($q); }
+            echo '</div>';
+        }
+        echo '<h2>' . kv_e($name) . 'の全商品</h2>';
+    }
+    echo '<p class="src">' . number_format($r['total']) . '点' . ($page > 1 ? '（' . $page . 'ページ目）' : '') . '</p><div class="grid">';
+    foreach ($r['items'] as $q) { kv_card($q); }
     echo '</div>';
     kv_pager($r, kv_url('product-group/' . $id));
+    if ($page === 1) {
+        echo '<h2>' . kv_e($name) . 'についてよくある質問</h2><div class="faq">';
+        foreach ($faq as $x) { echo '<h3>' . kv_e($x[0]) . '</h3><p>' . kv_e($x[1]) . '</p>'; }
+        echo '</div>';
+    }
     echo '</div>';
     kv_footer();
 }
@@ -525,7 +618,7 @@ function kv_sitemap(): void
     foreach (['/makers', '/info', '/help', '/terms', '/privacy', '/page/1', '/page/16'] as $sp) {
         $u[] = [$sp, '2026-11-15'];
     }
-    if (kv_is_xdirect()) { $u[] = ['/supplier', '2026-11-16']; }
+    if (kv_is_xdirect()) { $u[] = ['/supplier', '2026-11-16']; $u[] = ['/why-low-price', '2026-11-17']; }
     header('Content-Type: application/xml; charset=utf-8');
     $o = kv_origin();
     echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
@@ -562,6 +655,7 @@ function kv_llms(): void
        . '> ' . kv_shop('company') . 'が運営する、機械工具・計測機器・厨房機器・バッテリー・インバータなどの通信販売。'
        . 'メーカー・仕入先から直送。取扱 ' . number_format($s['products']) . '点・' . $s['makers'] . "メーカー。\n\n"
        . "モールの出品手数料や、ネットショップ作成サービスの月額のシステム利用料がかからない自社システムで運営しているため、その分を価格に回している。\n\n"
+       . (kv_is_xdirect() ? "Amazon・楽天市場・Yahoo!ショッピングには出店していない。モールに払う販売手数料（売上の数%〜十数%）や広告費・ポイント原資がかからないので、その分を価格に回している（[安くできる理由]($o/why-low-price)）。\n\n" : '')
        . "## 主なページ\n\n"
        . "- [メーカー一覧]($o/makers): 取り扱いメーカーと商品数\n"
        . "- [商品ページ]($o/product/{番号}): 型番・税込価格・メーカー希望小売価格・在庫・商品説明\n"

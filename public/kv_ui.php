@@ -77,7 +77,7 @@ a{color:#0a7d75}
 header.site{background:#fff;border-bottom:1px solid #e5ebf1}
 header.site .inner{max-width:1080px;margin:0 auto;padding:12px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
 .migrated{margin:18px 0 26px;padding:22px 24px;border-radius:16px;background:linear-gradient(135deg,#0a9a8f,#0b6fa8);color:#fff}.migrated .badge{display:inline-block;margin:0 0 10px;padding:4px 12px;border-radius:999px;background:#fff;color:#0b6fa8;font-weight:800;font-size:13px}.migrated h1{margin:0 0 12px;font-size:28px;line-height:1.4;color:#fff}.migrated .lead{margin:0 0 14px;font-size:15px;line-height:1.8}.migrated .lead a{color:#fff;font-weight:800;text-decoration:underline}.migrated .points{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.migrated .points li{background:rgba(255,255,255,.14);border-radius:10px;padding:10px 12px;font-size:13.5px;line-height:1.6}.migrated .points b{display:block;font-size:15px}.migrated .oldshop{margin:14px 0 0;padding:12px 14px;border-radius:10px;background:#fff;color:#12202f;font-size:14px;line-height:1.7}.migrated .oldshop b{display:block;color:#0b6fa8}.migrated .oldshop a{display:inline-block;margin-top:4px;color:#0a7d74;font-weight:800}@media (max-width:640px){.migrated{padding:18px 16px}.migrated h1{font-size:21px}.migrated h1 br{display:none}}
-.card{position:relative}.card .sold{position:absolute;top:8px;left:8px;z-index:1;background:#0a9a8f;color:#fff;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px}
+.wrap>.lead{font-size:15px;line-height:1.9;margin:6px 0 14px;max-width:900px}.faq h3{font-size:15px;margin:18px 0 4px}.faq p{margin:0 0 6px;line-height:1.8}.card{position:relative}.card .sold{position:absolute;top:8px;left:8px;z-index:1;background:#0a9a8f;color:#fff;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px}
 .valuebar{background:#fff7e0;border-bottom:1px solid #f1dfa6;color:#4a3b00;font-size:13.5px;line-height:1.6}.valuebar .inner{max-width:1080px;margin:0 auto;padding:8px 16px;display:flex;gap:10px;align-items:baseline}.valuebar .inner>b{flex:0 0 auto;background:#e09a00;color:#fff;border-radius:999px;padding:1px 10px;font-size:12.5px}.valuebar span b{color:#8a5a00}@media (max-width:640px){.valuebar .inner{flex-direction:column;gap:4px;font-size:12.5px}}
 .logo{display:flex;align-items:center;flex:0 0 auto}
 .logo img{height:36px;width:auto;max-width:100%;object-fit:contain;display:block}
@@ -196,7 +196,8 @@ function kv_value_strip(): string
          . '<span>Amazon・楽天・Yahoo!ショッピングのような<b>モールの出品手数料</b>も、'
          . 'ネットショップ作成サービスの<b>月額のシステム利用料</b>もかからない自社システムで運営。'
          . 'その分を価格に回して、メーカー直送でお安くお届けします。'
-         . '<b>送料も原則無料</b>（北海道・沖縄・離島・海外発送などを除く）。</span></div></div>';
+         . '<b>送料も原則無料</b>（北海道・沖縄・離島・海外発送などを除く）。'
+         . ' <a href="' . kv_url('why-low-price') . '">くわしく</a></span></div></div>';
 }
 
 function kv_header(): void
@@ -238,7 +239,8 @@ function kv_footer(): void
        . ' ・ <a href="' . kv_url('contact') . '">お問い合わせ</a></p>'
        . '<p><a href="' . kv_url('page/1') . '">' . kv_e(kv_shop('name')) . 'について</a>'
        . ' ・ <a href="' . kv_url('makers') . '">メーカー一覧</a>'
-       . (kv_is_xdirect() ? ' ・ <a href="' . kv_url('supplier') . '">商材募集（メーカー・問屋さまへ）</a>' : '') . '</p>'
+       . (kv_is_xdirect() ? ' ・ <a href="' . kv_url('supplier') . '">商材募集（メーカー・問屋さまへ）</a>'
+                          . ' ・ <a href="' . kv_url('why-low-price') . '">Amazon・楽天より安くできる理由</a>' : '') . '</p>'
        . kv_exb_about()
        . '<p>&copy; ' . date('Y') . ' ' . kv_e(kv_shop('company')) . '</p>'
        . ((($_SERVER['HTTP_HOST'] ?? '') === 'exbridge.jp') ? '<p style="font-size:13px">この店は Kurage Vibe-Cart のデモです。<a href="https://kappstore.exbridge.jp/app.php?id=754c7ddb5f1c8f26&amp;ref=exdirect" target="_blank" rel="noopener">PHPだけで動くECをオンプレミスで（商品ページ）</a></p>' : '')

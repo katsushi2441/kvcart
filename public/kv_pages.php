@@ -953,6 +953,55 @@ function kv_code_prefixes(int $min = 20): string
     return '「' . kv_e(implode(', ', $list)) . '」';
 }
 
+/** Amazon・楽天・Yahoo!ショッピングより安くできる理由（1文）。「最安」とは書かない（相場より高い商品もあるため・2026-11-17）。 */
+function kv_low_price_reason(): string
+{
+    return kv_shop('name') . 'はAmazon・楽天市場・Yahoo!ショッピングなどのモールに出店せず、自社開発のシステムで運営しています。'
+         . 'モールに払う販売手数料や広告費・ポイントの原資、ネットショップサービスの月額利用料がかからないので、その分を価格に回しています。';
+}
+
+/**
+ * Amazon・楽天・Yahoo!ショッピングより安くできる理由（/why-low-price・2026-11-17 ユーザー指示「安く販売してる理由で集客したい」）。
+ * 事実だけを書く。「どこより安い」「最安」は書かない（モールの最安店より高い商品もある）。手数料の率は幅で書く。
+ */
+function kv_page_why_low_price(): void
+{
+    if (!kv_is_xdirect()) { http_response_code(404); kv_head('ページが見つかりません', '', '/why-low-price', ['noindex' => true]); echo '<div class="wrap"><p>ページが見つかりません。</p></div>'; kv_footer(); return; }
+    $s = kv_stats(); $name = kv_shop('name'); $o = kv_origin();
+    $faq = [
+        ['なぜAmazon・楽天・Yahoo!ショッピングより安くできるのですか？', kv_low_price_reason()],
+        ['モールの手数料はどのくらいかかるのですか？', 'モールで売ると、売上に応じた販売手数料（カテゴリや契約によって売上の数%〜十数%）に加えて、決済手数料・ポイントの原資・広告費などがかかり、商品の価格に上乗せされます。' . $name . 'はモールに出店していないので、これらがかかりません。'],
+        ['どの商品も一番安いのですか？', 'いいえ。手数料がかからない分を価格に回していますが、すべての商品がほかのお店より安いとは限りません。お見積もりのご相談はお問い合わせからどうぞ。'],
+        ['安いのに品質や保証は大丈夫ですか？', 'メーカー・仕入先から直送する新品の正規品です。メーカー保証のある商品は、メーカーの保証が受けられます。'],
+        ['送料はかかりますか？', kv_shop('ship_note')],
+        ['支払い方法は？', '銀行振込（前払い。在庫・納期を確認してから振込先をご案内します）と、クレジットカードがご利用いただけます。インボイス（適格請求書）にも対応しています。'],
+    ];
+    $title = 'Amazon・楽天・Yahoo!ショッピングより安くできる理由';
+    $desc = mb_substr(kv_low_price_reason() . '機械工具・計測機器・厨房機器・バッテリーなど' . number_format($s['products']) . '点をメーカー直送で。', 0, 160);
+    $jsonld = ['@context' => 'https://schema.org', '@graph' => [
+        ['@type' => 'WebPage', 'name' => $title, 'url' => $o . '/why-low-price', 'description' => $desc, 'isPartOf' => ['@type' => 'WebSite', 'name' => $name, 'url' => $o . '/']],
+        ['@type' => 'FAQPage', 'mainEntity' => array_map(fn($x) => ['@type' => 'Question', 'name' => $x[0], 'acceptedAnswer' => ['@type' => 'Answer', 'text' => $x[1]]], $faq)],
+    ]];
+    kv_head($title, $desc, '/why-low-price', ['jsonld' => $jsonld]);
+    echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a> › 安くできる理由</nav>'
+       . '<h1>' . kv_e($title) . '</h1>'
+       . '<p class="lead">' . kv_e(kv_low_price_reason()) . '</p>'
+       . '<h2>モールで買うと価格に含まれているもの</h2>'
+       . '<div class="makers" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">'
+       . '<div class="panel"><b>販売手数料</b><br><span class="src">売上に応じてモールに払う手数料。カテゴリや契約によって売上の数%〜十数%。</span></div>'
+       . '<div class="panel"><b>決済手数料・ポイント原資</b><br><span class="src">カード決済の手数料や、モールのポイント還元の原資。</span></div>'
+       . '<div class="panel"><b>広告費</b><br><span class="src">モール内の検索で上位に出すための広告。</span></div>'
+       . '<div class="panel"><b>ネットショップの月額利用料</b><br><span class="src">出店料やネットショップ作成サービスの月額。</span></div>'
+       . '</div>'
+       . '<p>' . kv_e($name) . 'は、これらがかからない自社開発のシステム（<a href="https://kappstore.exbridge.jp/app.php?id=754c7ddb5f1c8f26#ref=exdirect-why">Kurage Vibe-Cart</a>）で運営し、'
+       . 'メーカー・仕入先から直送しています。取扱は' . number_format($s['products']) . '点・' . (int)$s['makers'] . 'メーカーです。</p>'
+       . '<p><a class="btn" href="' . kv_url('makers') . '">メーカーから探す</a> <a class="btn ghost" href="' . kv_url('contact') . '">見積もりを相談する</a></p>'
+       . '<h2>よくある質問</h2><div class="faq">';
+    foreach ($faq as $x) { echo '<h3>' . kv_e($x[0]) . '</h3><p>' . kv_e($x[1]) . '</p>'; }
+    echo '</div></div>';
+    kv_footer();
+}
+
 /**
  * 商材募集（/supplier・2026-11-16）。メーカー・問屋に、X-Direct での取り扱いを呼びかける。
  * 当社の店（kv_is_xdirect）のときだけ出す。送信は kv_mail() で店のアドレスへ。
