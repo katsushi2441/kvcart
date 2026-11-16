@@ -207,7 +207,7 @@ function kv_header(): void
        . '<a class="brand" href="' . kv_url('') . '">' . kv_e(kv_shop('name'))
        . '<small>' . kv_e(kv_shop('tagline')) . '</small></a>'
        . '<form class="search" method="get" action="' . kv_url('search') . '">'
-       . '<input type="text" name="q" value="' . $q . '" placeholder="商品名・型番で検索" aria-label="商品検索">'
+       . '<input type="text" name="q" value="' . $q . '" placeholder="商品名・型番・JANで検索" aria-label="商品検索">'
        . '<button class="btn" type="submit">検索</button></form>'
        . '<a class="btn ghost" href="' . kv_url('cart') . '">カート</a>'
        . '<img class="mascot" src="' . kv_url('img/brand/kurage-mascot.webp') . '" width="265" height="300" alt="Kurage">'
