@@ -163,8 +163,57 @@ function kv_page_top(): void
     }
     echo '<h2>新着</h2><div class="grid">';
     foreach ($r['items'] as $p) { kv_card($p); }
-    echo '</div></div>';
+    echo '</div>';
+    // ブログの新着（2026-11-17 ユーザー指示「トップの下の方でいいので」）。フィードが無い店では出さない
+    $blog = kv_blog_latest(6);
+    if ($blog) {
+        echo '<h2>ブログの新着</h2><p class="src">運営会社（株式会社エクスブリッジ）のブログです。</p><div class="blogs">';
+        foreach ($blog as $b) {
+            echo '<a class="blog" href="' . kv_e($b['link'] . '#ref=exdirect-top-blog') . '">'
+               . ($b['img'] !== '' ? '<img src="' . kv_e($b['img']) . '" alt="" loading="lazy" width="1200" height="630">' : '')
+               . '<span class="d">' . kv_e($b['date']) . '</span><span class="t">' . kv_e($b['title']) . '</span></a>';
+        }
+        echo '</div>';
+    }
+    echo '</div>';
     kv_footer();
+}
+
+/**
+ * ブログの新着（RSS）。設定 shop.blog_feed（X-Direct は exbridge.jp の vibeblog）を1時間に1回だけ読み、kv_data/blog_feed.json に置く。
+ * 読めなかったときは前回の分を出す（トップを遅くしない・壊さない）。サムネイルは shop.blog_image の {slug} を置き換えて作る。
+ */
+function kv_blog_latest(int $n = 6): array
+{
+    $feed = kv_shop('blog_feed');
+    $imgPat = kv_shop('blog_image');
+    if ($feed === '' && kv_is_xdirect()) {
+        $feed = 'https://exbridge.jp/vibeblog/feed.xml';
+        $imgPat = 'https://exbridge.jp/images/vibeblog/{slug}.png';
+    }
+    if ($feed === '') { return []; }
+    $cache = __DIR__ . '/kv_data/blog_feed.json';
+    $old = is_file($cache) ? (json_decode((string)file_get_contents($cache), true) ?: []) : [];
+    $items = $old['items'] ?? [];
+    if (!$items || (time() - (int)($old['at'] ?? 0)) > 3600) {
+        $ctx = stream_context_create(['http' => ['timeout' => 3, 'user_agent' => 'kvcart-blog-feed']]);
+        $xml = @file_get_contents($feed, false, $ctx);
+        $x = $xml ? @simplexml_load_string($xml) : false;
+        if ($x && isset($x->channel->item)) {
+            $items = [];
+            foreach ($x->channel->item as $it) {
+                $link = (string)$it->link;
+                $slug = preg_replace('/\.html$/', '', basename((string)parse_url($link, PHP_URL_PATH)));
+                $ts = strtotime((string)$it->pubDate);
+                $items[] = ['title' => trim((string)$it->title), 'link' => $link, 'date' => $ts ? date('Y年n月j日', $ts) : '',
+                            'img' => ($imgPat !== '' && $slug !== '') ? str_replace('{slug}', $slug, $imgPat) : ''];
+                if (count($items) >= 12) { break; }
+            }
+        }
+        // 読めても読めなくても時刻は進める（失敗のたびに3秒待たせない）
+        @file_put_contents($cache, json_encode(['at' => time(), 'items' => $items], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
+    }
+    return array_slice($items, 0, $n);
 }
 
 /** トップの「人気商品」。kv_data/search_popular.json の並び順で、今売っている（表示している）商品だけを返す。 */
