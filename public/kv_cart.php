@@ -484,7 +484,9 @@ function kv_page_complete(): void
             echo '</div>';
         }
         if ($o['payment'] === 'bank') {
-            echo '<h2>お振込先</h2><div class="panel">' . nl2br(kv_e(kv_shop('bank')))
+            echo '<h2>お支払いについて</h2><div class="panel">'
+               . 'メーカーに在庫と納期を確認しています。確認ができしだい、納期とお振込先をメールでお知らせします。<br>'
+               . 'お振込みは、その連絡をお待ちいただいてからお願いいたします。'
                . '<p class="src" style="margin-top:10px">ご入金を確認したら発送します。'
                . '振込手数料はお客様のご負担でお願いします。</p></div>';
         }

@@ -394,7 +394,7 @@ function kv_admin_mail_templates(): void
     kv_admin_nav('mail');
     echo '<h1>メールテンプレート</h1>';
     if (!empty($_GET['saved'])) { echo '<div class="note">保存しました。</div>'; }
-    echo '<p class="src">使える差し込み: {code} {name} {total} {items} {bank} {tracking} {shop} {email}</p>'
+    echo '<p class="src">使える差し込み: {code} {name} {total} {items} {bank} {next} {tracking} {shop} {email}</p>'
        . '<form method="post"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">';
     foreach (kv_mail_defaults() as $k => $d) {
         [$subj, $body] = kv_mail_template($k);

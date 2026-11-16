@@ -191,12 +191,12 @@ function kv_mail_defaults(): array
     return [
         'order_received' => ['ご注文ありがとうございます（{code}）',
             "{name} 様\n\nご注文ありがとうございます。下記の内容で承りました。\n\n"
-            . "受注番号: {code}\n合計: {total}円（税込）\n\n{items}\n\n{bank}\n\n{shop}\n{email}\n"],
+            . "受注番号: {code}\n合計: {total}円（税込）\n\n{items}\n\n{next}\n\n{shop}\n{email}\n"],
         'flag_paid' => ['ご入金を確認しました（{code}）',
             "{name} 様\n\nご入金を確認しました。ありがとうございます。\n"
             . "準備ができ次第、発送します。\n\n受注番号: {code}\n合計: {total}円\n\n{shop}\n"],
         'flag_shipped' => ['商品を発送しました（{code}）',
-            "{name} 様\n\n商品を발送しました。\n\n受注番号: {code}\n{tracking}\n\n{shop}\n"],
+            "{name} 様\n\n商品を発送しました。\n\n受注番号: {code}\n{tracking}\n\n{shop}\n"],
         'flag_received' => ['ご注文を承りました（{code}）',
             "{name} 様\n\nご注文を承りました。\n\n受注番号: {code}\n\n{shop}\n"],
         'flag_other' => ['ご連絡（{code}）', "{name} 様\n\n受注番号 {code} についてご連絡します。\n\n{shop}\n"],
@@ -236,6 +236,11 @@ function kv_mail_render(int $oid, string $key): array
         '{total}' => number_format((int)$o['total']), '{items}' => $items,
         '{bank}' => $o['payment'] === 'bank' ? "【お振込先】\n" . kv_shop('bank')
                     : "【お支払い】\nクレジットカード（ご注文時のお支払い画面）。お支払いを確認したら、あらためてお知らせします。",
+        // 注文受付メール用。振込先は書かず、在庫・納期の確認後に案内することだけ伝える
+        '{next}' => $o['payment'] === 'bank'
+                    ? "【今後の流れ】\nメーカーに在庫と納期を確認しています。確認ができしだい、納期とお振込先をメールでお知らせします。\n"
+                      . "お振込みは、その連絡をお待ちいただいてからお願いいたします。"
+                    : "【お支払い】\nクレジットカード（ご注文時のお支払い画面）。お支払いを確認したら、あらためてお知らせします。",
         '{pay_url}' => $o['payment'] === 'stripe' && function_exists('kv_stripe_pay_url') ? kv_stripe_pay_url($o) : '',
         '{tracking}' => $o['tracking'] ? '送り状番号: ' . $o['tracking'] : '',
         '{shop}' => kv_shop('name') . '（' . kv_shop('company') . '）',
@@ -259,5 +264,13 @@ function kv_mail_send(int $oid, string $key): bool
        . "Reply-To: $from\r\nContent-Type: text/plain; charset=UTF-8\r\n";
     $ok = @mail($o['email'], mb_encode_mimeheader($subj), $body, $h);
     kv_log($oid, 'mail', ($ok ? '送信' : '送信できず') . ': ' . $key . ' → ' . $o['email']);
+    if ($key === 'order_received' && $from !== '') {
+        // 店にも同じ内容を送る（新しい注文に気づけるように）
+        $note = "新しい注文が入りました。お客様には下の内容で注文確認メールを送っています（送信: " . ($ok ? '成功' : '失敗') . "）。\n"
+              . "お客様: " . $o['name'] . ' ' . ($o['company'] ?? '') . " / " . $o['email'] . " / " . ($o['tel'] ?? '') . "\n"
+              . "------------------------------------\n";
+        $ok2 = @mail($from, mb_encode_mimeheader('【新規注文】' . $subj), $note . $body, $h);
+        kv_log($oid, 'mail', ($ok2 ? '送信' : '送信できず') . ': 店への通知 → ' . $from);
+    }
     return (bool)$ok;
 }
