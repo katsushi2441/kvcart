@@ -246,7 +246,11 @@ function kv_mail_render(int $oid, string $key): array
         '{shop}' => kv_shop('name') . '（' . kv_shop('company') . '）',
         '{email}' => kv_shop('email'),
     ];
-    return [strtr($subj, $map), strtr($body, $map)];
+    $body = strtr($body, $map);
+    // 設定の mail_footer（任意）を、お客様へのメールすべての末尾に付ける（会社の他事業の案内など）
+    $footer = trim(kv_shop('mail_footer'));
+    if ($footer !== '') { $body = rtrim($body) . "\n\n" . $footer . "\n"; }
+    return [strtr($subj, $map), $body];
 }
 
 /**
