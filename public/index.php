@@ -437,17 +437,48 @@ function kv_page_product(int $id): void
         ],
     ];
     if (isset($jsonld['offers']) && is_array($jsonld['offers'])) { $jsonld['offers'] = array_filter($jsonld['offers'], fn($v) => $v !== null); }
-    // 説明文の頭に型番・JAN を入れる（検索結果に出る文。JAN で探す人向け）
-    $lead = trim((($m0 = kv_model_display($p['model_number'], $p['name'])) !== '' ? '型番 ' . $m0 . ' ' : '')
-               . (kv_jan($p) !== '' ? 'JAN ' . kv_jan($p) : ''));
-    if ($lead !== '') { $desc = mb_substr($lead . '。' . $desc, 0, 160); }
+    // 要約（2026-11-17 SEO/AEO/GEO）。メーカー・分類・型番・JAN・価格・送料を、事実だけで短く。検索結果の説明文と本文の冒頭に使う
+    $m0 = kv_model_display($p['model_number'], $p['name']);
+    $label = $m0 !== '' ? $m0 : trim(preg_replace('/【[^】]*】/u', '', (string)$p['name']));
+    // かぎかっこの中は「商品名から型番・メーカー名・JAN・【】を除いたもの」（型番を二度書かない）
+    $short = preg_replace('/【[^】]*】/u', ' ', (string)$p['name']);
+    foreach (array_filter([$m0, $mk['name'] ?? '', kv_jan($p)]) as $w) { $short = str_ireplace($w, ' ', $short); }
+    $short = trim(preg_replace('/[\s　]+/u', ' ', $short));
+    if (mb_strlen($short) < 2 || mb_strlen($short) > 40) { $short = $label; }
+    $shipShort = kv_is_xdirect() ? '送料は原則無料、メーカー・仕入先からの直送です。' : '';
+    $summary = ($mk ? $mk['name'] . 'の' : '') . ($cat ? $cat['name'] . '「' : '「') . $short . '」'
+             . ($m0 !== '' || kv_jan($p) !== '' ? '（' . trim(($m0 !== '' ? '型番 ' . $m0 : '') . (kv_jan($p) !== '' ? ($m0 !== '' ? '・' : '') . 'JAN ' . kv_jan($p) : '')) . '）' : '') . '。'
+             . ($incl !== null ? kv_shop('name') . 'では税込' . number_format($incl) . '円（本体' . number_format((int)$p['price']) . '円）で販売しています。'
+                               : '価格・納期はお問い合わせください。数量と送り先をお知らせいただければご案内します。')
+             . $shipShort;
+    $desc = mb_substr($summary . $desc, 0, 160);
+    $jsonld['description'] = mb_substr($summary . $desc, 0, 300);
+    if ($cat) { $jsonld['category'] = $cat['name']; }
+    // その商品についてのよくある質問（価格・納期・送料だけ）
+    $pfaq = [
+        [$label . 'の価格はいくらですか？', $incl !== null ? '税込' . number_format($incl) . '円（本体' . number_format((int)$p['price']) . '円）です。'
+                                                   : '価格はお問い合わせください。ご希望の数量と送り先をお知らせいただければ、価格と納期をご案内します。'],
+        [$label . 'の納期はどのくらいですか？', 'ご注文・お問い合わせのあと、メーカー・仕入先に在庫と納期を確認してメールでご連絡します。'],
+    ];
+    if (kv_is_xdirect()) { $pfaq[] = [$label . 'の送料はかかりますか？', kv_shop('ship_note')]; }
+    $o = kv_base_url();
+    $crumbs = [['@type' => 'ListItem', 'position' => 1, 'name' => 'トップ', 'item' => $o . '/']];
+    if ($mk) { $crumbs[] = ['@type' => 'ListItem', 'position' => count($crumbs) + 1, 'name' => $mk['name'], 'item' => $o . '/product-group/' . (int)$mk['id']]; }
+    if ($cat) { $crumbs[] = ['@type' => 'ListItem', 'position' => count($crumbs) + 1, 'name' => $cat['name'], 'item' => $o . '/product-list/' . (int)$cat['id']]; }
+    $crumbs[] = ['@type' => 'ListItem', 'position' => count($crumbs) + 1, 'name' => (string)$p['name']];
+    $prodLd = array_filter($jsonld); unset($prodLd['@context']);
+    $graph = ['@context' => 'https://schema.org', '@graph' => [
+        $prodLd,
+        ['@type' => 'BreadcrumbList', 'itemListElement' => $crumbs],
+        ['@type' => 'FAQPage', 'mainEntity' => array_map(fn($x) => ['@type' => 'Question', 'name' => $x[0], 'acceptedAnswer' => ['@type' => 'Answer', 'text' => $x[1]]], $pfaq)],
+    ]];
     kv_head(kv_product_title($p), $desc, '/product/' . $id,
-            ['og_type' => 'product', 'image' => $p['image_url'], 'jsonld' => array_filter($jsonld)]);
+            ['og_type' => 'product', 'image' => $p['image_url'], 'jsonld' => $graph]);
     echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a>'
        . ($mk ? ' › <a href="' . kv_url('product-group/' . (int)$mk['id']) . '">' . kv_e($mk['name']) . '</a>' : '')
        . ($cat ? ' › <a href="' . kv_url('product-list/' . (int)$cat['id']) . '">' . kv_e($cat['name']) . '</a>' : '')
        . '</nav>';
-    echo '<h1>' . kv_e($p['name']) . '</h1><div class="pd">';
+    echo '<h1>' . kv_e($p['name']) . '</h1><p class="lead">' . kv_e($summary) . '</p><div class="pd">';
     echo '<div class="img">' . ($p['image_url'] ? '<img src="' . kv_e(kv_img($p['image_url'])) . '" alt="' . kv_e($p['name']) . '">' : '') . '</div>';
     echo '<div><div class="panel">';
     if (($mdl = kv_model_display($p['model_number'], $p['name'])) !== '') { echo '<p class="src">型番 ' . kv_e($mdl) . '</p>'; }
@@ -508,11 +539,51 @@ function kv_page_product(int $id): void
     }
     echo '<p class="src" style="margin-top:12px">' . kv_e(kv_shop('ship_note')) . '</p>';
     echo '</div></div></div>';
+    // 基本情報（AI・検索エンジンが拾いやすい表。事実だけ）
+    $rows = [['メーカー', $mk ? '<a href="' . kv_url('product-group/' . (int)$mk['id']) . '">' . kv_e($mk['name']) . '</a>' : ''],
+             ['型番', kv_e($m0)], ['JANコード', kv_e(kv_jan($p))],
+             ['分類', $cat ? '<a href="' . kv_url('product-list/' . (int)$cat['id']) . '">' . kv_e($cat['name']) . '</a>' : ''],
+             ['価格', $incl !== null ? '税込' . number_format($incl) . '円（本体' . number_format((int)$p['price']) . '円）' : '価格・納期はお問い合わせください'],
+             ['メーカー希望小売価格', $p['list_price'] && $incl !== null && (int)$p['list_price'] > (int)$p['price'] ? number_format((int)$p['list_price']) . '円' : ''],
+             ['送料', kv_e(kv_shop('ship_note'))],
+             ['お届け', kv_is_xdirect() ? 'メーカー・仕入先から直送（在庫・納期を確認してからご連絡します）' : '']];
+    echo '<h2>基本情報</h2><div class="scroll"><table class="t spec">';
+    foreach ($rows as [$k, $v]) { if ($v !== '') { echo '<tr><th>' . $k . '</th><td>' . $v . '</td></tr>'; } }
+    echo '</table></div>';
     if ($p['description']) {
         echo '<h2>商品説明</h2><div class="panel desc">' . kv_clean_desc((string)$p['description']) . '</div>';
     }
+    echo '<h2>' . kv_e($label) . 'についてよくある質問</h2><div class="faq">';
+    foreach ($pfaq as $x) { echo '<h3>' . kv_e($x[0]) . '</h3><p>' . kv_e($x[1]) . '</p>'; }
+    echo '</div>';
+    // 関連商品（同じメーカー・同じ分類 → 同じ分類 の順。内部リンク）
+    $rel = kv_related($p, 8);
+    if ($rel) {
+        echo '<h2>関連商品</h2><div class="grid">';
+        foreach ($rel as $q) { kv_card($q); }
+        echo '</div>';
+    }
     echo '</div>';
     kv_footer();
+}
+
+/** 関連商品。同じメーカー・同じ分類から、足りなければ同じ分類から（自分は除く・表示している商品だけ）。 */
+function kv_related(array $p, int $n = 8): array
+{
+    $db = kv_db(); $out = []; $seen = [(int)$p['id'] => true];
+    $qs = [];
+    if ($p['maker_id'] && $p['category_id']) { $qs[] = ['SELECT * FROM products WHERE hidden=0 AND maker_id=? AND category_id=? AND id<>? ORDER BY (image_url<>"") DESC, id DESC LIMIT ?', [(int)$p['maker_id'], (int)$p['category_id'], (int)$p['id'], $n]]; }
+    if ($p['category_id']) { $qs[] = ['SELECT * FROM products WHERE hidden=0 AND category_id=? AND id<>? ORDER BY (image_url<>"") DESC, id DESC LIMIT ?', [(int)$p['category_id'], (int)$p['id'], $n * 2]]; }
+    if ($p['maker_id']) { $qs[] = ['SELECT * FROM products WHERE hidden=0 AND maker_id=? AND id<>? ORDER BY (image_url<>"") DESC, id DESC LIMIT ?', [(int)$p['maker_id'], (int)$p['id'], $n]]; }
+    foreach ($qs as [$sql, $args]) {
+        $st = $db->prepare($sql); $st->execute($args);
+        foreach ($st->fetchAll() as $r) {
+            if (isset($seen[(int)$r['id']])) { continue; }
+            $seen[(int)$r['id']] = true; $out[] = $r;
+            if (count($out) >= $n) { return $out; }
+        }
+    }
+    return $out;
 }
 
 /**
