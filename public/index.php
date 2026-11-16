@@ -111,7 +111,7 @@ function kv_page_top(): void
                  'parentOrganization' => ['@type' => 'Organization', 'name' => kv_shop('company')]],
                 ['@type' => 'WebSite', 'name' => kv_shop('name'), 'url' => kv_base_url() . '/',
                  'potentialAction' => ['@type' => 'SearchAction', 'target' => kv_base_url() . '/search?q={q}', 'query-input' => 'required name=q']],
-            ]]]);
+            ] + (kv_common_faq_ld() ? [2 => ['@type' => 'FAQPage', 'mainEntity' => kv_common_faq_ld()]] : [])]]);
     echo '<div class="wrap">';
     // おちゃのこネットから自社システムへ移したことを、トップで一番目立たせる（2026-11-15 依頼）。
     // X-Direct（exdirect.net）だけのお知らせ。配布版を使う店には出さない
@@ -304,7 +304,6 @@ function kv_page_group(int $id, int $page): void
         [$name . 'の商品はどこで買えますか？', $shop . '（' . kv_origin() . '）で' . $name . 'の商品を' . number_format($r['total']) . '点取り扱っています。'
             . ($allAsk ? '価格・納期は商品ページの「価格・納期を問い合わせる」からお問い合わせください。' : '商品ページからご注文いただけます。')],
         ['送料はかかりますか？', kv_shop('ship_note')],
-        ['支払い方法は？', '銀行振込（前払い。在庫・納期を確認してから振込先をご案内します）と、クレジットカードがご利用いただけます。'],
         ['納期はどのくらいですか？', 'ご注文・お問い合わせのあと、メーカー・仕入先に在庫と納期を確認してメールでご連絡します。'],
         ['Amazon・楽天・Yahoo!ショッピングより安くできるのはなぜですか？', kv_low_price_reason()],
         ['掲載されていない' . $name . 'の商品も買えますか？', '掲載していない型番も、お問い合わせいただければお見積もりします。'],
@@ -321,8 +320,8 @@ function kv_page_group(int $id, int $page): void
         ['@type' => 'ItemList', 'numberOfItems' => (int)$r['total'], 'itemListElement' => array_values(array_map(
             fn($q, $k) => ['@type' => 'ListItem', 'position' => ($page - 1) * 24 + $k + 1, 'url' => $o . '/product/' . (int)$q['id'], 'name' => (string)$q['name']],
             $r['items'], array_keys($r['items'])))],
-        ['@type' => 'FAQPage', 'mainEntity' => array_map(fn($x) => ['@type' => 'Question', 'name' => $x[0],
-            'acceptedAnswer' => ['@type' => 'Answer', 'text' => $x[1]]], $faq)],
+        ['@type' => 'FAQPage', 'mainEntity' => array_merge(array_map(fn($x) => ['@type' => 'Question', 'name' => $x[0],
+            'acceptedAnswer' => ['@type' => 'Answer', 'text' => $x[1]]], $faq), kv_common_faq_ld())],
     ]];
     kv_head($title, $desc, $path, ['jsonld' => $jsonld]);
     echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a> › '
@@ -667,6 +666,10 @@ function kv_llms(): void
        . "## メーカー\n\n";
     foreach (kv_makers() as $mk) {
         echo '- [' . $mk['name'] . "の商品一覧]($o/product-group/" . (int)$mk['id'] . ")\n";
+    }
+    if (kv_common_faq()) {
+        echo "\n## 安心してご利用いただくために（よくある質問）\n\n";
+        foreach (kv_common_faq() as $x) { echo '- ' . $x[0] . ' ' . $x[1] . "\n"; }
     }
     echo "\n## 注文について\n\n"
        . "- 注文後に在庫・納期・送料を確認してご連絡します。\n"

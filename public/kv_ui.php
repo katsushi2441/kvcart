@@ -77,7 +77,7 @@ a{color:#0a7d75}
 header.site{background:#fff;border-bottom:1px solid #e5ebf1}
 header.site .inner{max-width:1080px;margin:0 auto;padding:12px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
 .migrated{margin:18px 0 26px;padding:22px 24px;border-radius:16px;background:linear-gradient(135deg,#0a9a8f,#0b6fa8);color:#fff}.migrated .badge{display:inline-block;margin:0 0 10px;padding:4px 12px;border-radius:999px;background:#fff;color:#0b6fa8;font-weight:800;font-size:13px}.migrated h1{margin:0 0 12px;font-size:28px;line-height:1.4;color:#fff}.migrated .lead{margin:0 0 14px;font-size:15px;line-height:1.8}.migrated .lead a{color:#fff;font-weight:800;text-decoration:underline}.migrated .points{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.migrated .points li{background:rgba(255,255,255,.14);border-radius:10px;padding:10px 12px;font-size:13.5px;line-height:1.6}.migrated .points b{display:block;font-size:15px}.migrated .oldshop{margin:14px 0 0;padding:12px 14px;border-radius:10px;background:#fff;color:#12202f;font-size:14px;line-height:1.7}.migrated .oldshop b{display:block;color:#0b6fa8}.migrated .oldshop a{display:inline-block;margin-top:4px;color:#0a7d74;font-weight:800}@media (max-width:640px){.migrated{padding:18px 16px}.migrated h1{font-size:21px}.migrated h1 br{display:none}}
-.wrap>.lead{font-size:15px;line-height:1.9;margin:6px 0 14px;max-width:900px}.faq h3{font-size:15px;margin:18px 0 4px}.faq p{margin:0 0 6px;line-height:1.8}.card{position:relative}.card .sold{position:absolute;top:8px;left:8px;z-index:1;background:#0a9a8f;color:#fff;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px}
+.cfaq{margin-top:28px;background:#f6f9fb;border-top:1px solid #e3eaef}.cfaq .inner{max-width:1100px;margin:0 auto;padding:18px 16px}.cfaq h2{font-size:17px;margin:0 0 10px}.cfaq details{background:#fff;border:1px solid #e3eaef;border-radius:10px;margin:0 0 8px;padding:10px 14px}.cfaq summary{cursor:pointer;font-weight:700;font-size:14.5px}.cfaq details p{margin:8px 0 0;line-height:1.8;font-size:14px}.wrap>.lead{font-size:15px;line-height:1.9;margin:6px 0 14px;max-width:900px}.faq h3{font-size:15px;margin:18px 0 4px}.faq p{margin:0 0 6px;line-height:1.8}.card{position:relative}.card .sold{position:absolute;top:8px;left:8px;z-index:1;background:#0a9a8f;color:#fff;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px}
 .valuebar{background:#fff7e0;border-bottom:1px solid #f1dfa6;color:#4a3b00;font-size:13.5px;line-height:1.6}.valuebar .inner{max-width:1080px;margin:0 auto;padding:8px 16px;display:flex;gap:10px;align-items:baseline}.valuebar .inner>b{flex:0 0 auto;background:#e09a00;color:#fff;border-radius:999px;padding:1px 10px;font-size:12.5px}.valuebar span b{color:#8a5a00}@media (max-width:640px){.valuebar .inner{flex-direction:column;gap:4px;font-size:12.5px}}
 .logo{display:flex;align-items:center;flex:0 0 auto}
 .logo img{height:36px;width:auto;max-width:100%;object-fit:contain;display:block}
@@ -227,8 +227,38 @@ function kv_exb_about(): string
     return '<section class="exb-about" style="max-width:1080px;margin:32px auto 0;padding:18px 16px 8px;border-top:1px solid #d6dde3;font-size:13.5px;line-height:1.75;color:#33414d;background:transparent;box-sizing:border-box;text-align:left"><h2 style="font-size:15px;line-height:1.5;margin:0 0 6px;color:#1f2d38;font-weight:700">エクスブリッジについて</h2><p style="margin:0 0 8px">このページは、名古屋のシステム開発会社・株式会社エクスブリッジが運営しています。AIを使って中小企業の業務システムを作り、保守契約・月額のシステム利用料・要件定義なしで使える買い切りの業務システムを <a href="https://kappstore.exbridge.jp/#ref=exb-about-exdirect">Kurage App Store</a> で販売しています。</p><dl style="display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:0 0 8px"><dt style="font-weight:700">会社名</dt><dd style="margin:0">株式会社エクスブリッジ（EXBRIDGE, Inc.）</dd><dt style="font-weight:700">所在地</dt><dd style="margin:0">愛知県名古屋市瑞穂区内浜町34-9 305</dd><dt style="font-weight:700">設立</dt><dd style="margin:0">2004年4月</dd><dt style="font-weight:700">資本金</dt><dd style="margin:0">1億250万円</dd><dt style="font-weight:700">代表取締役</dt><dd style="margin:0">小嶋 篤</dd><dt style="font-weight:700">法人番号</dt><dd style="margin:0">4180001056508</dd><dt style="font-weight:700">事業</dt><dd style="margin:0">AIを使った業務システムの開発、Kurage App Store の運営、AI-IT顧問</dd></dl><p style="margin:0"><a href="https://exbridge.jp/profile.html#ref=exb-about-exdirect">会社概要</a>　<a href="https://exbridge.jp/vibeblog/2026-11-03-exbridge-yameta-3tsu-hoshu-getsugaku-youken.html#ref=exb-about-exdirect">エクスブリッジがやめた3つ</a>　<a href="https://exbridge.jp/system-kaihatsu-nagoya.html#ref=exb-about-exdirect">システム開発 名古屋</a>　<a href="https://exbridge.jp/homepage-seisaku-nagoya.html#ref=exb-about-exdirect">ホームページ制作 名古屋</a>　<a href="https://exbridge.jp/ai-it-komon.html#ref=exb-about-exdirect">AI-IT顧問</a>　<a href="https://exbridge.jp/contact.php#ref=exb-about-exdirect">お問い合わせ</a></p></section>';
 }
 
+/**
+ * 全ページ共通のよくある質問（2026-11-17 ユーザー指示「安心安全な理由」「重要なことだけ」）。AEO/GEO 向け。
+ * 事実だけを書く: カードは Stripe の画面で決済（当店はカード番号を受け取らない）・振込は在庫確認後・書類は PDF で発行・運営会社・正規品。
+ * 会社の資本金はフッターにあるので、ここには書かない（二重にしない）。
+ */
+function kv_common_faq(): array
+{
+    if (!kv_is_xdirect()) { return []; }
+    return [
+        ['クレジットカードの情報は安全ですか？', 'カード決済は、決済会社Stripe（ストライプ）の決済画面で行います。当店はカード番号を受け取らず、保存もしません。通信はSSLで暗号化しています。'],
+        ['先に代金を振り込む必要がありますか？', 'いいえ。ご注文のあと、メーカー・仕入先に在庫と納期を確認してから振込先をご案内します。在庫・納期をご確認いただいてからのお振込みです。'],
+        ['領収書・見積書・請求書・納品書は発行できますか？', '発行できます。インボイス（適格請求書）に対応し、宛名・但し書きのご指定も承ります。商品は直送のため、書類はPDFでメールにてお送りします。大学・研究機関などの後払いにも対応しています。'],
+        ['どんな会社が運営していますか？', '名古屋市の株式会社エクスブリッジ（2004年設立）が運営しています。東京大学・京都大学などの大学や研究機関にも納入しています。'],
+        ['商品は正規品ですか？', 'メーカー・仕入先から直送する新品の正規品です。メーカー保証のある商品は、メーカーの保証が受けられます。'],
+    ];
+}
+
+/** 共通のよくある質問の FAQPage 用の要素（トップ・メーカーページの構造化データに入れる）。 */
+function kv_common_faq_ld(): array
+{
+    return array_map(fn($x) => ['@type' => 'Question', 'name' => $x[0], 'acceptedAnswer' => ['@type' => 'Answer', 'text' => $x[1]]], kv_common_faq());
+}
+
 function kv_footer(): void
 {
+    $cf = kv_common_faq();
+    if ($cf) {
+        // 開閉式で全ページに出す（ページを長くしない。中身は検索エンジン・AI も読める）
+        echo '<section class="cfaq"><div class="inner"><h2>安心してご利用いただくために</h2>';
+        foreach ($cf as $x) { echo '<details><summary>' . kv_e($x[0]) . '</summary><p>' . kv_e($x[1]) . '</p></details>'; }
+        echo '<p class="src"><a href="' . kv_url('page/16') . '">よくあるご質問をもっと見る</a> ・ <a href="' . kv_url('info') . '">特定商取引法表示</a></p></div></section>';
+    }
     // 規約・プライバシーポリシーは **全ページから1クリックで開ける**ようにする
     echo '<footer class="site"><div class="inner">'
        . '<p><a href="' . kv_url('info') . '">特定商取引法表示</a>'
