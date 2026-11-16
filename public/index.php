@@ -300,6 +300,7 @@ function kv_page_product(int $id): void
     $jsonld = [
         '@context' => 'https://schema.org', '@type' => 'Product',
         'name' => $p['name'], 'sku' => $p['model_number'] ?: (string)$p['id'],
+        'mpn' => kv_model_display($p['model_number'], $p['name']) ?: null,
         'image' => $p['image_url'] ? kv_abs((string)$p['image_url']) : null,
         'url' => kv_base_url() . '/product/' . $id,
         'brand' => $mk ? ['@type' => 'Brand', 'name' => $mk['name']] : null,
@@ -329,7 +330,7 @@ function kv_page_product(int $id): void
     echo '<h1>' . kv_e($p['name']) . '</h1><div class="pd">';
     echo '<div class="img">' . ($p['image_url'] ? '<img src="' . kv_e(kv_img($p['image_url'])) . '" alt="' . kv_e($p['name']) . '">' : '') . '</div>';
     echo '<div><div class="panel">';
-    if ($p['model_number']) { echo '<p class="src">型番 ' . kv_e($p['model_number']) . '</p>'; }
+    if (($mdl = kv_model_display($p['model_number'], $p['name'])) !== '') { echo '<p class="src">型番 ' . kv_e($mdl) . '</p>'; }
     if ($incl === null) {
         echo '<p class="price-big"><small>価格はお問い合わせください</small></p>';
     } else {
@@ -413,7 +414,7 @@ function kv_page_retired(int $id): void
     echo '<div class="wrap"><h1>' . kv_e($r['name'] ?: 'この商品') . '</h1>'
        . '<div class="note"><b>この商品は取り扱いを終了しました。</b><br>'
        . 'お探しいただきありがとうございます。取り扱いメーカーを見直したため、この商品はご購入いただけません。'
-       . ($r['model_number'] ? '<br>型番: ' . kv_e($r['model_number']) : '')
+       . (($mdl = kv_model_display($r['model_number'], $r['name'])) !== '' ? '<br>型番: ' . kv_e($mdl) : '')
        . ($r['maker_name'] ? '<br>メーカー: ' . kv_e($r['maker_name']) : '')
        . '</div>';
     if ($sug) {

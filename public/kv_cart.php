@@ -170,7 +170,7 @@ function kv_page_cart(): void
            . '</td>'
            . '<td><a href="' . kv_url('product/' . (int)$p['id']) . '">' . kv_e($p['name']) . '</a>'
            . ($l['opt'] ? '<div><b>' . kv_e($l['opt']) . '</b></div>' : '')
-           . ($p['model_number'] ? '<div class="src">[' . kv_e($p['model_number']) . ']</div>' : '') . '</td>'
+           . (($mdl = kv_model_display($p['model_number'], $p['name'])) !== '' ? '<div class="src">[' . kv_e($mdl) . ']</div>' : '') . '</td>'
            . '<td style="white-space:nowrap">' . number_format($l['unit']) . '円</td>'
            . '<td><input type="number" name="qty_of[' . kv_e($l['key']) . ']" value="' . $l['qty']
            . '" min="0" max="99" style="width:70px;padding:7px;border:2px solid #cfdae4;border-radius:8px"></td>'
@@ -384,7 +384,7 @@ function kv_page_confirm(): void
         $p = $l['product'];
         echo '<tr><td>' . kv_e($p['name'])
            . ($l['opt'] ? '<div><b>' . kv_e($l['opt']) . '</b></div>' : '')
-           . ($p['model_number'] ? '<div class="src">[' . kv_e($p['model_number']) . ']</div>' : '') . '</td>'
+           . (($mdl = kv_model_display($p['model_number'], $p['name'])) !== '' ? '<div class="src">[' . kv_e($mdl) . ']</div>' : '') . '</td>'
            . '<td>' . number_format($l['unit']) . '円</td><td>' . $l['qty'] . '</td>'
            . '<td>' . number_format($l['amount']) . '円</td></tr>';
     }

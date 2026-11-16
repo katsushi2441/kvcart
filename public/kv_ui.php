@@ -255,7 +255,7 @@ function kv_card(array $p, string $note = ''): void
        . ($p['image_url'] ? '<img src="' . kv_e(kv_img($p['image_url'])) . '" alt="' . kv_e($p['name']) . '" loading="lazy">' : '')
        . '</a><div class="b">'
        . '<a class="nm" href="' . kv_url('product/' . (int)$p['id']) . '">' . kv_e($p['name']) . '</a>'
-       . ($p['model_number'] ? '<div class="mn">' . kv_e($p['model_number']) . '</div>' : '')
+       . (($mdl = kv_model_display($p['model_number'], $p['name'])) !== '' ? '<div class="mn">' . kv_e($mdl) . '</div>' : '')
        . '<div class="pr">' . ($incl === null ? '<small>価格はお問い合わせください</small>'
             : number_format($incl) . '円<small> 税込</small>') . '</div>'
        . '</div></div>';

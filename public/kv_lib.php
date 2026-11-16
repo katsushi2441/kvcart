@@ -71,6 +71,24 @@ function kv_img(?string $u): string
 }
 
 
+/**
+ * お客様に見せる型番（2026-11-17）。DB の model_number は仕入先の社内記号付き（TMT- MMS16- OYA- など）で、
+ * 発注先を見分けるために残すが、お客様の画面・メールには出さない。
+ * 1) 型番がそのまま商品名にあればそのまま（マザーツールの MT-600 のように記号に見えて実は型番のもの）
+ * 2) 先頭の記号を外した残りが商品名にあれば、それ
+ * 3) どちらでもなければ空（型番は商品名の先頭に入っているので出さない）
+ */
+function kv_model_display($mn, $name): string
+{
+    $mn = trim((string)$mn); $name = (string)$name;
+    if ($mn === '') { return ''; }
+    if (mb_stripos($name, $mn) !== false) { return $mn; }
+    // 記号の後ろが JAN（45/49 で始まる13桁）のものは型番ではないので出さない
+    if (preg_match('/^[A-Z]{2,5}\d{0,2}-(.+)$/', $mn, $m) && !preg_match('/^4[59]\d{11}$/', $m[1])
+        && mb_stripos($name, $m[1]) !== false) { return $m[1]; }
+    return '';
+}
+
 function kv_e($s): string
 {
     return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');

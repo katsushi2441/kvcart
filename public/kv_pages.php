@@ -243,9 +243,6 @@ function kv_static_pages(): array
         'html'  => '<p>' . $name . 'は、直送通販による低コスト化で、'
             . '世界規模のネット通販を激安で展開しています！</p>'
             . '<p>インボイス対応！</p>'
-            . '<h2>商品番号について</h2>'
-            . '<p>商品番号の先頭の記号' . kv_code_prefixes() . 'などは、'
-            . '配送業務を効率的に行うための社内専用記号で、メーカー品番はこれを除くものとなります。</p>'
             . '<h2>ご注文の前に</h2>'
             . '<p class="note">※写真は代表写真、イメージ画像を使用している場合がございます。<br>'
             . '※メーカー品番で仕様をご確認の上、ご注文ください。<br>'
@@ -842,7 +839,7 @@ function kv_page_contact(): void
         $p = kv_product($pid);
         if ($p) {
             $in['body'] = '【お問い合わせ商品】' . $p['name'] . "\n"
-                . '商品番号: ' . (string)$p['model_number'] . "\n"
+                . ((($mdl = kv_model_display($p['model_number'], $p['name'])) !== '') ? '型番: ' . $mdl . "\n" : '')
                 . '商品ページ: ' . kv_site_url('product/' . $pid) . "\n\n";
         }
     }

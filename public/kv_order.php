@@ -226,7 +226,7 @@ function kv_mail_render(int $oid, string $key): array
     $items = '';
     foreach (kv_order_items($oid) as $it) {
         $items .= sprintf("%s%s × %d = %s円\n", $it['name'],
-            $it['model_number'] ? ' (' . $it['model_number'] . ')' : '',
+            (($mdl = kv_model_display($it['model_number'], $it['name'])) !== '' && mb_stripos($it['name'], $mdl) !== 0) ? ' (' . $mdl . ')' : '',
             (int)$it['qty'], number_format((int)$it['amount']));
     }
     $items .= sprintf("\n小計 %s円 / 消費税 %s円 / 合計 %s円",
@@ -272,6 +272,7 @@ function kv_mail_send(int $oid, string $key): bool
         // 店にも同じ内容を送る（新しい注文に気づけるように）
         $note = "新しい注文が入りました。お客様には下の内容で注文確認メールを送っています（送信: " . ($ok ? '成功' : '失敗') . "）。\n"
               . "お客様: " . $o['name'] . ' ' . ($o['company'] ?? '') . " / " . $o['email'] . " / " . ($o['tel'] ?? '') . "\n"
+              . "発注用の社内型番: " . implode(' / ', array_map(static fn($it) => $it['model_number'] . ' ×' . (int)$it['qty'], kv_order_items($oid))) . "\n"
               . "------------------------------------\n";
         $ok2 = kv_mail($from, mb_encode_mimeheader('【新規注文】' . $subj), $note . $body, $h);
         kv_log($oid, 'mail', ($ok2 ? '送信' : '送信できず') . ': 店への通知 → ' . $from);

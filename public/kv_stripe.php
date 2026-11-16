@@ -88,7 +88,7 @@ function kv_stripe_send_invoice(int $oid): array
     // 明細（税別の商品・消費税・送料）。合計が受注の合計と一致しなければ作らない
     $lines = [];
     foreach (kv_order_items($oid) as $it) {
-        $desc = $it['name'] . ($it['model_number'] ? ' [' . $it['model_number'] . ']' : '')
+        $desc = $it['name'] . (($mdl = kv_model_display($it['model_number'], $it['name'])) !== '' && mb_stripos($it['name'], $mdl) === false ? ' [' . $mdl . ']' : '')
               . ' ' . number_format((int)$it['unit']) . '円 × ' . (int)$it['qty'];
         $lines[] = [mb_strimwidth($desc, 0, 480, '…'), (int)$it['amount']];
     }
@@ -144,7 +144,7 @@ function kv_stripe_checkout(int $oid): array
     $lines = [];
     foreach (kv_order_items($oid) as $it) {
         $lines[] = ['price_data' => ['currency' => 'jpy', 'unit_amount' => (int)$it['unit'],
-                    'product_data' => ['name' => mb_strimwidth($it['name'] . ($it['model_number'] ? ' [' . $it['model_number'] . ']' : ''), 0, 240, '…')]],
+                    'product_data' => ['name' => mb_strimwidth($it['name'] . (($mdl = kv_model_display($it['model_number'], $it['name'])) !== '' && mb_stripos($it['name'], $mdl) === false ? ' [' . $mdl . ']' : ''), 0, 240, '…')]],
                     'quantity' => (int)$it['qty']];
     }
     if ((int)$o['tax'] > 0) {
