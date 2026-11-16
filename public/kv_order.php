@@ -251,7 +251,7 @@ function kv_mail_render(int $oid, string $key): array
 
 /**
  * メール送信。**失敗しても注文は壊さない**（送れなかったことをログに残す）。
- * レンタルサーバーの mail() を使う。SMTP が要るなら後で差し替える。
+ * kv_mail()（設定に KV_SMTP があれば SMTP、無ければ mail()）で送る。
  */
 function kv_mail_send(int $oid, string $key): bool
 {
@@ -262,14 +262,14 @@ function kv_mail_send(int $oid, string $key): bool
     $from = kv_shop('email');
     $h = "From: " . mb_encode_mimeheader(kv_shop('name')) . " <$from>\r\n"
        . "Reply-To: $from\r\nContent-Type: text/plain; charset=UTF-8\r\n";
-    $ok = @mail($o['email'], mb_encode_mimeheader($subj), $body, $h);
+    $ok = kv_mail($o['email'], mb_encode_mimeheader($subj), $body, $h);
     kv_log($oid, 'mail', ($ok ? '送信' : '送信できず') . ': ' . $key . ' → ' . $o['email']);
     if ($key === 'order_received' && $from !== '') {
         // 店にも同じ内容を送る（新しい注文に気づけるように）
         $note = "新しい注文が入りました。お客様には下の内容で注文確認メールを送っています（送信: " . ($ok ? '成功' : '失敗') . "）。\n"
               . "お客様: " . $o['name'] . ' ' . ($o['company'] ?? '') . " / " . $o['email'] . " / " . ($o['tel'] ?? '') . "\n"
               . "------------------------------------\n";
-        $ok2 = @mail($from, mb_encode_mimeheader('【新規注文】' . $subj), $note . $body, $h);
+        $ok2 = kv_mail($from, mb_encode_mimeheader('【新規注文】' . $subj), $note . $body, $h);
         kv_log($oid, 'mail', ($ok2 ? '送信' : '送信できず') . ': 店への通知 → ' . $from);
     }
     return (bool)$ok;

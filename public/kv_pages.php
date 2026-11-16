@@ -864,7 +864,7 @@ function kv_page_contact(): void
             $h = 'From: ' . mb_encode_mimeheader(kv_shop('name')) . ' <' . $to . '>' . "\r\n"
                . 'Reply-To: ' . $reply . "\r\n"
                . 'Content-Type: text/plain; charset=UTF-8' . "\r\n";
-            $sent = @mail($to, mb_encode_mimeheader('【お問い合わせ】' . $in['name'] . ' 様'), $body, $h);
+            $sent = kv_mail($to, mb_encode_mimeheader('【お問い合わせ】' . $in['name'] . ' 様'), $body, $h);
             if (!$sent) {
                 $err = '送信できませんでした。お手数ですが ' . $to . ' 宛にメールでご連絡ください。';
             }

@@ -212,3 +212,63 @@ function kv_maker_name_exists(string $name): bool
     $st->execute(['%' . $name . '%']);
     return (int)$st->fetchColumn() > 0;
 }
+
+/**
+ * メール送信。mail() と同じ引数で呼べる。
+ * 設定に KV_SMTP（['host'=>'ssl://smtp.example.jp:465','user'=>..,'pass'=>..]）があれば、
+ * 店のアドレスで認証して SMTP で送る（SPF・DKIM が通り、Gmail で迷惑メールにされにくい）。
+ * 無ければレンタルサーバーの mail() で送る。
+ */
+function kv_mail(string $to, string $subject, string $body, string $headers = ''): bool
+{
+    if (!defined('KV_SMTP') || !is_array(KV_SMTP) || empty(KV_SMTP['host'])) {
+        return @mail($to, $subject, $body, $headers);
+    }
+    $c = KV_SMTP;
+    $from = $c['user'];
+    $fp = @stream_socket_client($c['host'], $errno, $errstr, 20);
+    if (!$fp) { return false; }
+    stream_set_timeout($fp, 20);
+    $read = function () use ($fp): string {
+        $out = '';
+        while (($line = fgets($fp, 1024)) !== false) {
+            $out .= $line;
+            if (strlen($line) < 4 || $line[3] === ' ') { break; }
+        }
+        return $out;
+    };
+    $cmd = function (string $s, array $ok) use ($fp, $read): bool {
+        fwrite($fp, $s . "\r\n");
+        return in_array((int)substr($read(), 0, 3), $ok, true);
+    };
+    $host = $_SERVER['SERVER_NAME'] ?? 'localhost';
+    $ok = in_array((int)substr($read(), 0, 3), [220], true)
+        && $cmd('EHLO ' . $host, [250])
+        && $cmd('AUTH LOGIN', [334])
+        && $cmd(base64_encode($c['user']), [334])
+        && $cmd(base64_encode($c['pass']), [235])
+        && $cmd('MAIL FROM:<' . $from . '>', [250]);
+    $rcpts = array_filter(array_map('trim', explode(',', $to)));
+    foreach ($rcpts as $r) {
+        if (!$ok) { break; }
+        $addr = preg_match('/<([^>]+)>/', $r, $m) ? $m[1] : $r;
+        $ok = $cmd('RCPT TO:<' . str_replace(["\r", "\n"], '', $addr) . '>', [250, 251]);
+    }
+    if ($ok) { $ok = $cmd('DATA', [354]); }
+    if ($ok) {
+        $dom = substr(strrchr($from, '@'), 1) ?: 'localhost';
+        $msg = 'To: ' . $to . "\r\n"
+             . 'Subject: ' . $subject . "\r\n"
+             . 'Date: ' . date('r') . "\r\n"
+             . 'Message-ID: <' . bin2hex(random_bytes(12)) . '@' . $dom . ">\r\n"
+             . 'MIME-Version: 1.0' . "\r\n"
+             . rtrim(str_replace(["\r\n", "\n"], "\r\n", $headers)) . "\r\n"
+             . 'Content-Transfer-Encoding: base64' . "\r\n\r\n"
+             . chunk_split(base64_encode($body), 76, "\r\n");
+        fwrite($fp, $msg . ".\r\n");
+        $ok = in_array((int)substr($read(), 0, 3), [250], true);
+    }
+    @fwrite($fp, "QUIT\r\n");
+    fclose($fp);
+    return $ok;
+}
