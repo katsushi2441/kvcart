@@ -68,6 +68,12 @@ function kv_yen($n): string
 }
 
 /** 税込価格。おちゃのこネットの price は税抜。軽減税率は tax_reduce で分ける。 */
+/** カートでは買えず、お問い合わせで受ける商品か（price_unspecified=1。メーカーで販売中止になった品など・2026-11-16）。価格は表示する。 */
+function kv_inquiry_only(array $p): bool
+{
+    return (int)($p['price_unspecified'] ?? 0) === 1;
+}
+
 function kv_price_incl(array $p): ?int
 {
     if ($p['price'] === null || (int)$p['price'] === 0) { return null; }

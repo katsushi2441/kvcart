@@ -343,7 +343,11 @@ function kv_page_product(int $id): void
     }
     $in = ((int)$p['stock_unlimited'] === 1) || ((int)$p['stock'] > 0);
     echo '<p class="src">' . ($in ? '在庫あり／お取り寄せ' : '在庫を確認します') . '</p>';
-    if ($incl !== null) {
+    if ($incl !== null && kv_inquiry_only($p)) {
+        // 問い合わせ扱い（メーカーで販売中止など）。価格は出し、カートの代わりにお問い合わせ（2026-11-16）
+        echo '<div class="note">メーカーでの販売が終了した商品です。在庫の有無・後継の機種は、お問い合わせください。</div>'
+           . '<p><a class="btn" href="' . kv_url('contact') . '?pid=' . (int)$p['id'] . '">この商品について問い合わせる</a></p>';
+    } elseif ($incl !== null) {
         // オプション（おちゃのこネットの「オプション」と同じ。選ばないとカートに入らない）
         $opt_html = '';
         $vjson = json_decode((string)($p['variations'] ?? ''), true);

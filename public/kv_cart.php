@@ -93,6 +93,7 @@ function kv_cart_lines(): array
         if (!$p) { continue; }
         $pick = kv_variation_pick($p, $idx);
         if ($pick === null) { continue; }   // 選択が足りない・品切れの組み合わせは入れない
+        if (kv_price_incl($p) === null || kv_inquiry_only($p)) { continue; }   // 問い合わせ扱い（販売中止品など）はカートに残さない
         $qty = max(1, (int)$q);
         $unit = $pick['price'] ?? (int)$p['price'];
         $rate = ((int)($p['tax_reduce'] ?? 0) === 1) ? 0.08 : 0.10;
@@ -118,6 +119,10 @@ function kv_page_cart(): void
             $pid = (int)$_POST['add'];
             $idx = array_map('intval', array_values((array)($_POST['opt'] ?? [])));
             $p = kv_product($pid);
+            if ($p && (kv_price_incl($p) === null || kv_inquiry_only($p))) {   // 価格の無い商品・問い合わせ扱いの商品はカートに入れない
+                header('Location: ' . kv_url('product/' . $pid));
+                return;
+            }
             if ($p && kv_variation_pick($p, $idx) === null) {
                 // オプションを選ばずに送られた（または品切れの組み合わせ）。商品ページへ戻す
                 header('Location: ' . kv_url('product/' . $pid) . '?need_option=1');
