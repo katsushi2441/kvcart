@@ -1010,7 +1010,7 @@ function kv_page_supplier(): void
 {
     if (!kv_is_xdirect()) { http_response_code(404); kv_head('ページが見つかりません', '', '/supplier', ['noindex' => true]); echo '<div class="wrap"><p>ページが見つかりません。</p></div>'; kv_footer(); return; }
     $to = kv_shop('email');
-    $f = ['company' => '', 'name' => '', 'email' => '', 'tel' => '', 'genre' => '', 'url' => '', 'pricelist' => '', 'body' => ''];
+    $f = ['company' => '', 'name' => '', 'email' => '', 'tel' => '', 'genre' => '', 'url' => '', 'pricelist' => '', 'topic' => '', 'body' => ''];
     $sent = false; $err = '';
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach (array_keys($f) as $k) { $f[$k] = trim((string)($_POST[$k] ?? '')); }
@@ -1023,7 +1023,7 @@ function kv_page_supplier(): void
         } else {
             $reply = str_replace(["\r", "\n"], '', $f['email']);
             $body = "会社名: {$f['company']}\nご担当者: {$f['name']}\nメール: {$f['email']}\n電話: {$f['tel']}\n"
-                  . "取り扱い商品のジャンル: {$f['genre']}\nホームページ: {$f['url']}\n価格表: {$f['pricelist']}\n"
+                  . "取り扱い商品のジャンル: {$f['genre']}\nホームページ: {$f['url']}\n価格表: {$f['pricelist']}\nご相談の内容: {$f['topic']}\n"
                   . "受信日時: " . date('Y-m-d H:i:s') . "\n------------------------------------\n" . $f['body'] . "\n";
             $h = 'From: ' . mb_encode_mimeheader(kv_shop('name')) . ' <' . $to . '>' . "\r\n"
                . 'Reply-To: ' . $reply . "\r\n" . 'Content-Type: text/plain; charset=UTF-8' . "\r\n";
@@ -1034,8 +1034,8 @@ function kv_page_supplier(): void
 
     $s = kv_stats();
     $makers = array_slice(array_map(fn($m) => $m['name'], kv_makers()), 0, 20);
-    $desc = '工具・機械・設備のメーカー・問屋さまへ。X-Direct（取扱 ' . number_format($s['products'])
-          . '点）で、在庫を持たずにメーカー直送で全国の法人へ販売しませんか。取り扱いの条件と流れ、お問い合わせ。';
+    $desc = '工具・機械・設備のメーカー・問屋さまへ。出品の初期費用はかかりません。モールやSaaSのECのような手間・手数料なしで、X-Direct（取扱 ' . number_format($s['products'])
+          . '点）からメーカー直送で全国の法人へ販売しませんか。商品データの用意が手間なら、AIで商品管理の業務システムも低コストで開発します。';
     $jsonld = ['@context' => 'https://schema.org', '@type' => 'WebPage', 'name' => '商材募集｜メーカー・問屋さまへ',
                'description' => $desc, 'url' => kv_origin() . '/supplier',
                'publisher' => ['@type' => 'Organization', 'name' => kv_shop('company')]];
@@ -1064,7 +1064,8 @@ function kv_page_supplier(): void
     }
 
     echo '<section class="sup-hero"><h1>工具・機械・設備の商材を募集しています</h1>'
-       . '<p>メーカー・問屋さまへ。在庫を持たず、メーカー直送で、全国の法人のお客様に販売します。</p>'
+       . '<p>メーカー・問屋さまへ。在庫を持たず、メーカー直送で、全国の法人のお客様に販売します。<br>'
+       . '<b>出品の初期費用はかかりません。</b>モールやネットショップサービスのような手数料・月額もいただきません。</p>'
        . '<a class="btn" href="#supplier-form">取り扱いの相談をする</a></section>';
 
     echo '<div class="sup-nums"><div><b>' . number_format($s['products']) . '</b><span>掲載商品</span></div>'
@@ -1076,12 +1077,38 @@ function kv_page_supplier(): void
        . '工場・建設・農業・飲食店など、法人のお客様からのご注文が中心です。</p>'
        . '<p class="sup-makers">主な取り扱いメーカー：' . kv_e(implode('、', $makers)) . '</p></div>';
 
+    // モール・SaaS の EC は AI に対応していない（2026-11-17 ユーザー指示。ブログ記事と同じ主張）
+    echo '<h2>モールもSaaSのECも、AIに対応していません</h2>'
+       . '<div class="panel"><p>Amazon・楽天市場・Yahoo!ショッピング・メルカリなどのモールや、SaaSのネットショップサービスに自社で出品すると、次のような手間・コスト・リスクがかかります。'
+       . '当社も、これらのモールとネットショップサービスをすべて止め、AIに対応した自社開発のECシステムに切り替えました。</p></div>'
+       . '<div class="sup-cards">'
+       . '<div><h3>手間：管理画面で人が1件ずつ</h3><p>商品の登録も価格の改定も、管理画面で人が1件ずつ操作するのが基本です。APIがあっても変えられる項目が限られ、AIに仕事を任せられません。</p></div>'
+       . '<div><h3>コスト：手数料・月額・広告費</h3><p>売上に応じた販売手数料（売上の数%〜十数%）、月額の出店料・システム利用料、モール内で上位に出すための広告費がかかり続けます。</p></div>'
+       . '<div><h3>初期費用と準備</h3><p>出店の審査・初期費用、商品ページの作成、画像や説明文の用意など、売り始める前の準備に時間と費用がかかります。</p></div>'
+       . '<div><h3>リスク：規約と手数料の変更</h3><p>手数料の改定や規約の変更は、モール側が決めます。売上をモールに頼るほど、自社では止められないリスクが大きくなります。</p></div>'
+       . '</div>'
+       . '<p class="src">くわしくは、ブログ「<a href="https://exbridge.jp/vibeblog/2026-11-17-ai-kudo-ec-x-direct-kurage-vibe-cart.html#ref=exdirect-supplier">楽天・Yahoo!ショッピング・Amazon・メルカリから撤退し、AI駆動のECサイトへ</a>」をご覧ください。</p>';
+
     echo '<h2>メーカー・問屋さまにとっての良いところ</h2><div class="sup-cards">'
+       . '<div><h3>出品の初期費用はかかりません</h3><p>X-Direct への掲載に、初期費用・出品料・月額はかかりません。当社が仕入れて販売するので、モールのような販売手数料もいただきません。</p></div>'
+       . '<div><h3>商品ページは当社がAIで作ります</h3><p>価格表とカタログ・ホームページの情報をいただければ、商品の登録・写真・仕様表・説明文は当社がAIで用意します。管理画面を操作していただく必要はありません。</p></div>'
        . '<div><h3>在庫を持たずに販売できます</h3><p>ご注文が入ったら、メーカー・問屋さまからお客様へ直送していただきます。当社への発注は1台から行います。</p></div>'
        . '<div><h3>無理な値引きをしなくても売れます</h3><p>モールの出品手数料や、ネットショップ作成サービスの月額のシステム利用料がかからない自社システムで運営しているため、値崩れするような安売りをしなくても価格で選ばれます。</p></div>'
        . '<div><h3>価格の改定にすぐ対応します</h3><p>価格表（PDF・Excel）をいただければ、AIを使って掲載中の商品の価格をまとめて改定します。電菱さまの価格表では、211件を1日で改定しました。</p></div>'
        . '<div><h3>検索とAIの答えに載ります</h3><p>商品ページは、Google の検索と、ChatGPT などのAIの答えに出るように作っています。型番で探しているお客様に届きます。</p></div>'
        . '</div>';
+
+    // 価格表・商品データの用意が手間なら → AI で業務システムを作る（AI-IT顧問・kappstore へ）
+    echo '<section class="panel" style="border-left:5px solid #0e5f8a"><h2>価格表や商品データの用意が手間なら</h2>'
+       . '<p>「価格表が紙やバラバラのExcelで、渡せる形になっていない」「商品の情報が担当者の頭の中にしかない」という会社も多いと思います。'
+       . 'そのときは、商品・価格・在庫を管理する業務システムを、AIを使って低コストで開発します。</p>'
+       . '<ul><li>価格表・商品データをひとつにまとめ、価格の改定をまとめて反映できる</li>'
+       . '<li>見積書・受発注・在庫の管理まで、自社の仕事の進め方に合わせて作れる</li>'
+       . '<li>作ったシステムから、X-Direct へそのままデータを渡せる</li></ul>'
+       . '<p>開発と運用は、月単位で社内の情報システム部門の代わりを務める「AI-IT顧問」で一緒に進めます。'
+       . 'すぐに使える業務システムは、買い切りの製品としても用意しています。</p>'
+       . '<p style="display:flex;flex-wrap:wrap;gap:8px"><a class="btn" style="white-space:normal;max-width:100%" href="https://exbridge.jp/ai-it-komon.html#ref=exdirect-supplier">AI-IT顧問を見る</a>'
+       . '<a class="btn ghost" style="white-space:normal;max-width:100%" href="https://kappstore.exbridge.jp/#ref=exdirect-supplier">業務システムの製品を見る（kappstore）</a></p></section>';
 
     echo '<div class="panel"><h2>取り扱いの条件</h2><ul>'
        . '<li>お客様へのメーカー直送（または問屋さまからの直送）に対応できること</li>'
@@ -1094,6 +1121,7 @@ function kv_page_supplier(): void
 
     if ($err !== '') { echo '<div class="alert">' . kv_e($err) . '</div>'; }
     $opt = function (string $v) use ($f) { return '<option' . ($f['pricelist'] === $v ? ' selected' : '') . '>' . kv_e($v) . '</option>'; };
+    $opt2 = function (string $v) use ($f) { return '<option' . ($f['topic'] === $v ? ' selected' : '') . '>' . kv_e($v) . '</option>'; };
     echo '<form method="post" class="panel" id="supplier-form"><h2>取り扱いのご相談</h2>'
        . '<input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '"><table class="formtbl">'
        . '<tr><th>会社名<span class="req">必須</span></th><td><input type="text" name="company" value="' . kv_e($f['company']) . '" required></td></tr>'
@@ -1103,6 +1131,7 @@ function kv_page_supplier(): void
        . '<tr><th>取り扱い商品のジャンル<span class="req">必須</span></th><td><input type="text" name="genre" value="' . kv_e($f['genre']) . '" required><div class="hint">例：電動工具、ポンプ、LED照明、厨房機器</div></td></tr>'
        . '<tr><th>ホームページのURL</th><td><input type="text" name="url" value="' . kv_e($f['url']) . '"></td></tr>'
        . '<tr><th>価格表</th><td><select name="pricelist"><option value="">選んでください</option>' . $opt('あり（PDF）') . $opt('あり（Excel）') . $opt('あり（その他）') . $opt('なし') . '</select></td></tr>'
+       . '<tr><th>ご相談の内容</th><td><select name="topic"><option value="">選んでください</option>' . $opt2('X-Direct での取り扱い') . $opt2('商品管理の業務システムの開発') . $opt2('両方') . '</select></td></tr>'
        . '<tr><th>メッセージ</th><td><textarea name="body" rows="6">' . kv_e($f['body']) . '</textarea></td></tr>'
        . '</table><p style="margin-top:14px"><button class="btn" type="submit">送信する</button></p></form></div>';
     kv_footer();
