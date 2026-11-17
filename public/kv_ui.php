@@ -235,13 +235,29 @@ function kv_exb_about(): string
 function kv_common_faq(): array
 {
     if (!kv_is_xdirect()) { return []; }
+    $soc = function_exists('kv_supplier_social') ? kv_supplier_social() : [];
     return [
         ['クレジットカードの情報は安全ですか？', 'カード決済は、決済会社Stripe（ストライプ）の決済画面で行います。当店はカード番号を受け取らず、保存もしません。通信はSSLで暗号化しています。'],
         ['先に代金を振り込む必要がありますか？', 'いいえ。ご注文のあと、メーカー・仕入先に在庫と納期を確認してから振込先をご案内します。在庫・納期をご確認いただいてからのお振込みです。'],
         ['領収書・見積書・請求書・納品書は発行できますか？', '発行できます。インボイス（適格請求書）に対応し、宛名・但し書きのご指定も承ります。商品は直送のため、書類はPDFでメールにてお送りします。大学・研究機関などの後払いにも対応しています。'],
-        ['どんな会社が運営していますか？', '名古屋市の株式会社エクスブリッジ（2004年設立）が運営しています。東京大学・京都大学などの大学や研究機関にも納入しています。'],
+        ['どんな会社が運営していますか？', '名古屋市の株式会社エクスブリッジ（2004年設立）が運営しています。東京大学・京都大学などの大学や研究機関にも納入しています。' . kv_common_faq_social(), $soc ? $soc['portal'] . '#ref=exdirect-faq' : ''],
         ['商品は正規品ですか？', 'メーカー・仕入先から直送する新品の正規品です。メーカー保証のある商品は、メーカーの保証が受けられます。'],
     ];
+}
+
+/**
+ * 「どんな会社が」の答えに足す、X公式アカウントの信用（2026-11-17 ユーザー指示: 商材募集ページのように国会議員のフォロワー・フォロワーポータル）。
+ * 数字は商材募集ページと同じ kv_data/supplier_social.json から。無ければ何も足さない。
+ */
+function kv_common_faq_social(): string
+{
+    $soc = function_exists('kv_supplier_social') ? kv_supplier_social() : [];
+    if (!$soc) { return ''; }
+    $c = $soc['counts'];
+    return '信頼されているX公式アカウント @' . $soc['account']['handle'] . ' も運用しています。' . (int)$soc['account']['since'] . '年から運用し、フォロワーは'
+         . number_format((int)$soc['account']['followers']) . '人。党首・大臣を含む国会議員' . (int)$c['giin'] . '人、首長' . (int)$c['shucho'] . '人、'
+         . 'フォロワー1万人を超えるインフルエンサー' . (int)$c['influencers'] . '人、企業' . (int)$c['companies'] . '社にフォローされています（'
+         . date('Y年n月', strtotime($soc['built'])) . '時点）。フォローしてくださっている方々は「Kurage フォロワーポータル」で紹介しています。';
 }
 
 /** 共通のよくある質問の FAQPage 用の要素（トップ・メーカーページの構造化データに入れる）。 */
@@ -256,7 +272,10 @@ function kv_footer(): void
     if ($cf) {
         // 開閉式で全ページに出す（ページを長くしない。中身は検索エンジン・AI も読める）
         echo '<section class="cfaq"><div class="inner"><h2>安心してご利用いただくために</h2>';
-        foreach ($cf as $x) { echo '<details><summary>' . kv_e($x[0]) . '</summary><p>' . kv_e($x[1]) . '</p></details>'; }
+        foreach ($cf as $x) {
+            echo '<details><summary>' . kv_e($x[0]) . '</summary><p>' . kv_e($x[1])
+               . (!empty($x[2]) ? ' <a href="' . kv_e($x[2]) . '">Kurage フォロワーポータルを見る</a>' : '') . '</p></details>';
+        }
         echo '<p class="src"><a href="' . kv_url('page/16') . '">よくあるご質問をもっと見る</a> ・ <a href="' . kv_url('info') . '">特定商取引法表示</a></p></div></section>';
     }
     // 規約・プライバシーポリシーは **全ページから1クリックで開ける**ようにする
