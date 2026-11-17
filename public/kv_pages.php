@@ -953,6 +953,67 @@ function kv_code_prefixes(int $min = 20): string
     return '「' . kv_e(implode(', ', $list)) . '」';
 }
 
+/** 業務システムの一覧のデータ（kv_data/systems.json・kvcart-sales/systems が Kurage App Store から作る）。無ければ空。 */
+function kv_systems(): array
+{
+    static $c = null;
+    if ($c !== null) { return $c; }
+    $f = __DIR__ . '/kv_data/systems.json';
+    $d = is_file($f) ? json_decode((string)file_get_contents($f), true) : null;
+    return $c = (is_array($d) && !empty($d['items'])) ? $d : [];
+}
+
+/**
+ * 業務システム（/business-systems・2026-11-17 ユーザー指示「kappstore のアクセスが伸びない・exdirect からリンク」）。
+ * 商品ページは作らない（同じ内容が2つのドメインにならないように）。カードから Kurage App Store の製品ページへ。
+ */
+function kv_page_systems(): void
+{
+    $d = kv_systems();
+    if (!$d) { http_response_code(404); kv_head('ページが見つかりません', '', '/business-systems', ['noindex' => true]); echo '<div class="wrap"><p>ページが見つかりません。</p></div>'; kv_footer(); return; }
+    $o = kv_origin();
+    $title = '中小企業の業務システムを買い切りで｜受発注・EC・グループウェア';
+    $lead = kv_shop('name') . 'を運営する株式会社エクスブリッジは、業務システムの開発もしています。受発注・EC・グループウェアなどの業務システムを、月額の利用料も保守契約もない買い切りで、自社のサーバーやレンタルサーバーに置いて使えます。ソースコードも付きます。';
+    $faq = [
+        ['月額の利用料はかかりますか？', 'かかりません。買い切りで、ソースコードごと御社のものになります。'],
+        ['どこで動きますか？', 'PHP が動くレンタルサーバーや社内のサーバーに置いて動きます（製品によって条件が違うので、各製品のページをご覧ください）。'],
+        ['どこで買えますか？', '運営会社のお店「Kurage App Store」で購入できます。各製品のページから注文できます。'],
+        ['自社の仕事に合わせて直せますか？', 'ソースコードが付くので直せます。開発と運用を月単位でお手伝いする「AI-IT顧問」もあります。'],
+    ];
+    $items = $d['items'];
+    $jsonld = ['@context' => 'https://schema.org', '@graph' => [
+        ['@type' => 'CollectionPage', 'name' => $title, 'url' => $o . '/business-systems', 'description' => $lead],
+        ['@type' => 'ItemList', 'itemListElement' => array_map(fn($x, $i) => ['@type' => 'ListItem', 'position' => $i + 1,
+            'item' => ['@type' => 'SoftwareApplication', 'name' => $x['name'], 'applicationCategory' => 'BusinessApplication', 'description' => $x['catch'],
+                       'url' => preg_replace('/#.*$/', '', $x['url']), 'image' => $x['image'],
+                       'offers' => ['@type' => 'Offer', 'price' => (string)$x['price'], 'priceCurrency' => 'JPY']]], $items, array_keys($items))],
+        ['@type' => 'FAQPage', 'mainEntity' => array_map(fn($x) => ['@type' => 'Question', 'name' => $x[0], 'acceptedAnswer' => ['@type' => 'Answer', 'text' => $x[1]]], $faq)],
+    ]];
+    kv_head($title, mb_substr($lead, 0, 150), '/business-systems', ['jsonld' => $jsonld, 'image' => $items[0]['image'] ?? '']);
+    echo '<style>.sys-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;margin:10px 0 22px}'
+       . '.sys{display:flex;flex-direction:column;background:#fff;border:1px solid #e3eaef;border-radius:12px;overflow:hidden;text-decoration:none;color:#17242b}'
+       . '.sys img{display:block;width:100%;height:auto;aspect-ratio:1200/630;object-fit:cover;background:#f2f6f9}'
+       . '.sys .b{padding:10px 12px 12px;display:flex;flex-direction:column;gap:5px;flex:1}.sys .k{font-size:12px;color:#0b6fa8;font-weight:700}'
+       . '.sys .n{font-size:15px;font-weight:700;line-height:1.4}.sys .c{font-size:13.5px;line-height:1.7;color:#33414d;flex:1}'
+       . '.sys .p{font-size:15px;font-weight:700}.sys .p small{font-size:12px;color:#5b6b78;font-weight:400}.sys .go{font-size:13px;color:#0a7d74;font-weight:700}</style>';
+    echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a> › 業務システム</nav>'
+       . '<h1>' . kv_e($title) . '</h1><p class="lead">' . kv_e($lead) . '</p><div class="sys-grid">';
+    foreach ($items as $x) {
+        echo '<a class="sys" href="' . kv_e($x['url']) . '">'
+           . ($x['image'] !== '' ? '<img src="' . kv_e($x['image']) . '" alt="' . kv_e($x['name']) . '" loading="lazy" width="1200" height="630">' : '')
+           . '<span class="b"><span class="k">' . kv_e($x['kind']) . '</span><span class="n">' . kv_e($x['name']) . '</span>'
+           . '<span class="c">' . kv_e($x['catch']) . '</span>'
+           . '<span class="p">' . number_format((int)$x['price']) . '円<small>（税込・買い切り）</small></span>'
+           . '<span class="go">くわしく見る（Kurage App Store）</span></span></a>';
+    }
+    echo '</div><p style="display:flex;flex-wrap:wrap;gap:8px"><a class="btn" style="white-space:normal;max-width:100%" href="' . kv_e($d['store']) . '#ref=exdirect-systems">Kurage App Store ですべての業務システムを見る</a>'
+       . '<a class="btn ghost" style="white-space:normal;max-width:100%" href="https://exbridge.jp/ai-it-komon.html#ref=exdirect-systems">自社に合わせて作るなら AI-IT顧問</a></p>'
+       . '<h2>よくある質問</h2><div class="faq">';
+    foreach ($faq as $x) { echo '<h3>' . kv_e($x[0]) . '</h3><p>' . kv_e($x[1]) . '</p>'; }
+    echo '</div></div>';
+    kv_footer();
+}
+
 /** Amazon・楽天・Yahoo!ショッピングより安くできる理由（1文）。「最安」とは書かない（相場より高い商品もあるため・2026-11-17）。 */
 function kv_low_price_reason(): string
 {
@@ -1182,7 +1243,7 @@ function kv_page_supplier(): void
        . '<p>開発と運用は、月単位で社内の情報システム部門の代わりを務める「AI-IT顧問」で一緒に進めます。'
        . 'すぐに使える業務システムは、買い切りの製品としても用意しています。</p>'
        . '<p style="display:flex;flex-wrap:wrap;gap:8px"><a class="btn" style="white-space:normal;max-width:100%" href="https://exbridge.jp/ai-it-komon.html#ref=exdirect-supplier">AI-IT顧問を見る</a>'
-       . '<a class="btn ghost" style="white-space:normal;max-width:100%" href="https://kappstore.exbridge.jp/#ref=exdirect-supplier">業務システムの製品を見る（kappstore）</a></p></section>';
+       . '<a class="btn ghost" style="white-space:normal;max-width:100%" href="' . (kv_systems() ? kv_url('business-systems') : 'https://kappstore.exbridge.jp/#ref=exdirect-supplier') . '">業務システムの製品を見る</a></p></section>';
 
     echo '<div class="panel"><h2>取り扱いの条件</h2><ul>'
        . '<li>お客様へのメーカー直送（または問屋さまからの直送）に対応できること</li>'

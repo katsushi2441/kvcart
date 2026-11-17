@@ -270,7 +270,8 @@ function kv_footer(): void
        . '<p><a href="' . kv_url('page/1') . '">' . kv_e(kv_shop('name')) . 'について</a>'
        . ' ・ <a href="' . kv_url('makers') . '">メーカー一覧</a>'
        . (kv_is_xdirect() ? ' ・ <a href="' . kv_url('supplier') . '">商材募集（メーカー・問屋さまへ）</a>'
-                          . ' ・ <a href="' . kv_url('why-low-price') . '">Amazon・楽天より安くできる理由</a>' : '') . '</p>'
+                          . ' ・ <a href="' . kv_url('why-low-price') . '">Amazon・楽天より安くできる理由</a>'
+                          . (function_exists('kv_systems') && kv_systems() ? ' ・ <a href="' . kv_url('business-systems') . '">業務システム（買い切り）</a>' : '') : '') . '</p>'
        . kv_exb_about()
        . '<p>&copy; ' . date('Y') . ' ' . kv_e(kv_shop('company')) . '</p>'
        . ((($_SERVER['HTTP_HOST'] ?? '') === 'exbridge.jp') ? '<p style="font-size:13px">この店は Kurage Vibe-Cart のデモです。<a href="https://kappstore.exbridge.jp/app.php?id=754c7ddb5f1c8f26&amp;ref=exdirect" target="_blank" rel="noopener">PHPだけで動くECをオンプレミスで（商品ページ）</a></p>' : '')

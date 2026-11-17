@@ -86,6 +86,7 @@ function kv_route(string $path, int $page): void
         case '/manual':   kv_page_manual(); return;
         case '/supplier': kv_page_supplier(); return;   // 商材募集（X-Direct のときだけ）
         case '/why-low-price': kv_page_why_low_price(); return;   // Amazon・楽天・Yahoo!ショッピングより安くできる理由（2026-11-17）
+        case '/business-systems': kv_page_systems(); return;      // 業務システム（Kurage App Store へつなぐ・2026-11-17）
     }
     // メーカーのslugでも引けるようにしておく（exbridge.jp/xdirect/ からの導線）
     if (preg_match('#^/maker/([a-z0-9_-]+)$#', $path, $m)) {
@@ -164,6 +165,18 @@ function kv_page_top(): void
     echo '<h2>新着</h2><div class="grid">';
     foreach ($r['items'] as $p) { kv_card($p); }
     echo '</div>';
+    // 業務システム（Kurage App Store へつなぐ・2026-11-17）。kv_data/systems.json が無い店では出さない
+    $sys = kv_systems();
+    if ($sys) {
+        echo '<h2>業務システムも、買い切りで</h2><p class="src">運営会社（株式会社エクスブリッジ）の業務システムです。月額なし・保守契約なしで使えます。'
+           . '<a href="' . kv_url('business-systems') . '">すべて見る</a></p><div class="blogs">';
+        foreach (array_slice($sys['items'], 0, 4) as $x) {
+            echo '<a class="blog" href="' . kv_e(str_replace('#ref=exdirect-systems', '#ref=exdirect-top-systems', $x['url'])) . '">'
+               . '<img src="' . kv_e($x['image']) . '" alt="" loading="lazy" width="1200" height="630">'
+               . '<span class="d">' . kv_e($x['kind']) . '・' . number_format((int)$x['price']) . '円（税込）</span><span class="t">' . kv_e($x['name']) . '</span></a>';
+        }
+        echo '</div>';
+    }
     // ブログの新着（2026-11-17 ユーザー指示「トップの下の方でいいので」）。フィードが無い店では出さない
     $blog = kv_blog_latest(6);
     if ($blog) {
@@ -738,6 +751,7 @@ function kv_sitemap(): void
         $u[] = [$sp, '2026-11-15'];
     }
     if (kv_is_xdirect()) { $u[] = ['/supplier', '2026-11-16']; $u[] = ['/why-low-price', '2026-11-17']; }
+    if (kv_systems()) { $u[] = ['/business-systems', '2026-11-17']; }
     header('Content-Type: application/xml; charset=utf-8');
     $o = kv_origin();
     echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
@@ -782,7 +796,8 @@ function kv_llms(): void
        . "- [特定商取引法表示]($o/info): 販売事業者・返品・お届け\n"
        . "- [よくあるご質問]($o/page/16)\n"
        . "- [お問い合わせ]($o/contact): 掲載していない商品の見積もりも受け付けます\n"
-       . (kv_is_xdirect() ? "- [商材募集]($o/supplier): 工具・機械・設備のメーカー・問屋さまの商材を募集（メーカー直送で販売）\n" : '') . "\n"
+       . (kv_is_xdirect() ? "- [商材募集]($o/supplier): 工具・機械・設備のメーカー・問屋さまの商材を募集（メーカー直送で販売）\n" : '')
+       . (kv_systems() ? "- [業務システム]($o/business-systems): 運営会社の業務システム（受発注・EC・グループウェアなど、オンプレミス・買い切り）。購入は Kurage App Store\n" : '') . "\n"
        . "## メーカー\n\n";
     foreach (kv_makers() as $mk) {
         echo '- [' . $mk['name'] . "の商品一覧]($o/product-group/" . (int)$mk['id'] . ")\n";
