@@ -1,6 +1,6 @@
 <?php
 /**
- * Kurage Vibe-Cart — 管理画面（受注管理）。
+ * Kurage Vibe-Cart — 管理画面（受注管理。商品・メーカー・カテゴリ・顧客・売上は kv_admin_catalog.php）。
  *
  * おちゃのこネットの受注管理に合わせる:
  *   - 受注一覧：期間・処理状況・購入者・管理メモで絞り込み、リピーター表示
@@ -21,17 +21,31 @@ require __DIR__ . '/kv_lib.php';
 require __DIR__ . '/kv_ui.php';
 require __DIR__ . '/kv_order.php';
 require __DIR__ . '/kv_stripe.php';
+require __DIR__ . '/kv_cart.php';
+require __DIR__ . '/kv_admin_catalog.php';
 
 kv_session();
 kv_admin_guard();
 
 $act = (string)($_GET['a'] ?? 'orders');
 if ($act === 'csv') { kv_admin_csv(); exit; }
+if ($act === 'pcsv') { kv_admin_pcsv(); exit; }
+if ($act === 'ccsv') { kv_admin_ccsv(); exit; }
 
 switch ($act) {
     case 'order':  kv_admin_order(); break;
     case 'new':    kv_admin_new(); break;
     case 'mail':   kv_admin_mail_templates(); break;
+    // 商品・メーカー・カテゴリ・顧客・売上（kv_admin_catalog.php・2026-11-17）
+    case 'products':   kv_admin_products(); break;
+    case 'product':    kv_admin_product(); break;
+    case 'price':      kv_admin_price(); break;
+    case 'pimport':    kv_admin_pimport(); break;
+    case 'plog':       kv_admin_plog(); break;
+    case 'makers':     kv_admin_makers(); break;
+    case 'categories': kv_admin_categories(); break;
+    case 'customers':  kv_admin_customers(); break;
+    case 'stats':      kv_admin_stats(); break;
     default:       kv_admin_orders(); break;
 }
 
@@ -85,7 +99,9 @@ function kv_admin_guard(): void
 function kv_admin_nav(string $now): void
 {
     $t = [
-        'orders' => '受注一覧', 'new' => '代理入力', 'mail' => 'メールテンプレート',
+        'orders' => '受注一覧', 'new' => '代理入力', 'products' => '商品', 'price' => '価格の一括改定', 'pimport' => '商品CSV取り込み',
+        'makers' => 'メーカー', 'categories' => 'カテゴリ', 'customers' => '顧客', 'stats' => '売上', 'plog' => '商品の変更履歴',
+        'mail' => 'メールテンプレート',
     ];
     echo '<div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap">';
     foreach ($t as $k => $label) {

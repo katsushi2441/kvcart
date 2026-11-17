@@ -107,6 +107,17 @@ function t_upsert(array $a)
                   : (array_key_exists($c, $cur) && $cur[$c] !== null ? $cur[$c] : ($def[$c] ?? null));
     }
     if (trim((string)$vals['name']) === '') { return err('name が空です'); }
+    if ($cur) {
+        // 既存の商品は、渡された項目だけを UPDATE する（2026-11-17）。以前は INSERT OR REPLACE で、
+        // ここに無い列（variations=オプション、price_unspecified=お問い合わせ品）が消えていた。
+        $set = array_values(array_filter($cols, fn($c) => array_key_exists($c, $a)));
+        if ($set) {
+            $db->prepare('UPDATE products SET ' . implode(',', array_map(fn($c) => "$c=?", $set)) . ',updated_at=? WHERE id=?')
+               ->execute(array_merge(array_map(fn($c) => $a[$c], $set), [date('c'), $id]));
+        }
+        return [true, j(['ok' => true, 'id' => $id, 'url' => '/product/' . $id, 'created' => false, 'updated' => $set,
+                         'notes' => $GLOBALS['NOTES']])];
+    }
     $db->prepare('INSERT OR REPLACE INTO products (id,' . implode(',', $cols)
         . ',updated_at,imported_at) VALUES (?,' . implode(',', array_fill(0, count($cols), '?')) . ',?,?)')
        ->execute(array_merge([$id], array_values($vals),
