@@ -113,6 +113,7 @@ function kv_stripe_send_invoice(int $oid): array
         'pending_invoice_items_behavior' => 'exclude',
         'description' => kv_shop('name') . ' ご注文 ' . $o['code'],
         'metadata' => ['kv_order_id' => (string)$oid, 'kv_order' => $o['code']],
+        'payment_settings' => ['payment_method_options' => ['card' => ['request_three_d_secure' => 'any']]],
     ], $key . '-inv');
     // 請求書の明細は後から足したものが上に出るので、逆順に足して「商品 → 消費税 → 送料」の順に見せる
     foreach (array_reverse($lines, true) as $i => [$desc, $amount]) {
@@ -169,6 +170,8 @@ function kv_stripe_checkout(int $oid): array
         'metadata' => ['kv_order_id' => (string)$oid, 'kv_order' => $o['code']],
         'payment_intent_data' => ['metadata' => ['kv_order_id' => (string)$oid, 'kv_order' => $o['code']],
                                   'description' => kv_shop('name') . ' ご注文 ' . $o['code']],
+        // 本人認証（3D セキュア）を毎回求める（2026-11-17 ユーザー承認）。不正カードの負担をカード会社側に移す
+        'payment_method_options' => ['card' => ['request_three_d_secure' => 'any']],
         'success_url' => $base . '/cart/complete',
         'cancel_url' => $base . '/cart/complete?canceled=1',
         'integration_identifier' => 'kvcart-checkout-' . $letters,
@@ -202,6 +205,33 @@ function kv_stripe_verify(string $payload, string $header, string $secret, int $
 }
 
 /** webhook のイベントを処理する。入金の反映はここだけで行う（お客様の戻りページに頼らない）。 */
+/**
+ * 決済の危険度を注文の記録に残す（2026-11-17 ユーザー承認）。Radar の危険度・カードの発行国・本人認証の結果。
+ * 取れなくても決済の処理は止めない。返り値は店への通知に添える1行。
+ */
+function kv_stripe_risk_note(int $oid, string $pi): string
+{
+    if ($pi === '') { return ''; }
+    try {
+        $p = kv_stripe_call('GET', '/payment_intents/' . rawurlencode($pi), ['expand' => ['latest_charge']]);
+        $ch = is_array($p['latest_charge'] ?? null) ? $p['latest_charge'] : [];
+        $out = $ch['outcome'] ?? [];
+        $card = $ch['payment_method_details']['card'] ?? [];
+        $tds = $card['three_d_secure']['result'] ?? '';
+        $level = (string)($out['risk_level'] ?? '');
+        $ja = ['normal' => '通常', 'elevated' => '高め（要確認）', 'highest' => '最も高い（発送前に必ず確認）'][$level] ?? ($level !== '' ? $level : '不明');
+        $line = '不正の危険度: ' . $ja
+              . ' / カード発行国: ' . ((string)($card['country'] ?? '') ?: '不明')
+              . ' / 本人認証: ' . ($tds === 'authenticated' ? '済み' : ($tds !== '' ? $tds : 'なし'))
+              . ' / CVC: ' . ((string)($card['checks']['cvc_check'] ?? '') ?: '不明');
+        kv_log($oid, 'stripe', $line);
+        return $line;
+    } catch (Throwable $e) {
+        kv_log($oid, 'stripe', '危険度を取れませんでした: ' . $e->getMessage());
+        return '';
+    }
+}
+
 function kv_stripe_handle(array $ev): string
 {
     $obj = $ev['data']['object'] ?? [];
@@ -222,6 +252,7 @@ function kv_stripe_handle(array $ev): string
             kv_log($oid, 'stripe', 'カードでのお支払いを確認しました: ' . $obj['id'] . ' / ' . ($obj['payment_intent'] ?? '')
                    . ' ' . number_format((int)($obj['amount_total'] ?? 0)) . '円');
             // 注文時のカード決済は、ここで初めて受付メールを送る（ご注文とお支払いの確認を1通で）。店にも通知する
+            $GLOBALS['kv_risk_note'] = kv_stripe_risk_note($oid, (string)($obj['payment_intent'] ?? ''));
             kv_order_flag($oid, 'paid', true, false);
             kv_mail_send($oid, 'order_paid_card');
             return 'paid';
@@ -232,6 +263,7 @@ function kv_stripe_handle(array $ev): string
             if ((int)$o['f_paid'] === 1) { return 'already paid'; }
             kv_log($oid, 'stripe', 'カードでのお支払いを確認しました: ' . $obj['id']
                    . ' ' . number_format((int)($obj['amount_paid'] ?? 0)) . '円');
+            kv_stripe_risk_note($oid, is_string($obj['payment_intent'] ?? null) ? $obj['payment_intent'] : '');
             kv_order_flag($oid, 'paid', true, true);   // 「入金」チェック＋入金確認メール
             return 'paid';
         case 'invoice.payment_failed':

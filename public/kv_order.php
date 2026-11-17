@@ -285,6 +285,7 @@ function kv_mail_send(int $oid, string $key): bool
               . "お客様には下の内容でメールを送っています（送信: " . ($ok ? '成功' : '失敗') . "）。\n"
               . "お客様: " . $o['name'] . ' ' . ($o['company'] ?? '') . " / " . $o['email'] . " / " . ($o['tel'] ?? '') . "\n"
               . "発注用の社内型番: " . implode(' / ', array_map(static fn($it) => $it['model_number'] . ' ×' . (int)$it['qty'], kv_order_items($oid))) . "\n"
+              . (!empty($GLOBALS['kv_risk_note']) ? "カード決済の確認: " . $GLOBALS['kv_risk_note'] . "\n" : '')
               . "------------------------------------\n";
         $ok2 = kv_mail($from, mb_encode_mimeheader('【新規注文】' . $subj), $note . $body, $h);
         kv_log($oid, 'mail', ($ok2 ? '送信' : '送信できず') . ': 店への通知 → ' . $from);
