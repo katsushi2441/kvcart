@@ -36,6 +36,7 @@ switch ($act) {
     case 'order':  kv_admin_order(); break;
     case 'new':    kv_admin_new(); break;
     case 'mail':   kv_admin_mail_templates(); break;
+    case 'compose': kv_admin_compose(); break;
     // 商品・メーカー・カテゴリ・顧客・売上（kv_admin_catalog.php・2026-11-17）
     case 'products':   kv_admin_products(); break;
     case 'product':    kv_admin_product(); break;
@@ -219,7 +220,11 @@ function kv_admin_order(): void
                 $_POST['tracking'], $ship, (int)$o['subtotal'] + (int)$o['tax'] + $ship, $id]);
             kv_log($id, 'edit', '受注内容を変更しました');
         } elseif (isset($_POST['flag'])) {
-            kv_order_flag($id, (string)$_POST['flag'], (string)$_POST['on'] === '1', !empty($_POST['send_mail']));
+            // メールは「編集して送る／そのまま送る／送らない」から選ぶ（おちゃのこネットと同じく、送る前に直せる・2026-11-17）
+            $mode = (string)($_POST['send_mail'] ?? '');
+            $on = (string)$_POST['on'] === '1';
+            kv_order_flag($id, (string)$_POST['flag'], $on, $on && $mode === '1');
+            if ($on && $mode === 'edit') { header('Location: ?a=compose&id=' . $id . '&tpl=flag_' . rawurlencode((string)$_POST['flag'])); exit; }
         } elseif (isset($_POST['cancel'])) {
             kv_db()->prepare('UPDATE orders SET cancelled=? WHERE id=?')
                    ->execute([(string)$_POST['cancel'] === '1' ? 1 : 0, $id]);
@@ -240,6 +245,10 @@ function kv_admin_order(): void
     kv_admin_nav('orders');
     echo '<nav class="crumb"><a href="?a=orders">受注一覧</a> › ' . kv_e($o['code']) . '</nav>'
        . '<h1>受注 ' . kv_e($o['code']) . '</h1>';
+    if (isset($_GET['mailed'])) {
+        echo $_GET['mailed'] === '1' ? '<div class="note">メールを送りました。下の「送ったメール」に全文が残っています。</div>'
+                                     : '<div class="alert">メールを送れませんでした。メールの設定（kv_config.php の KV_SMTP）を確かめてください。</div>';
+    }
     if ((int)$o['cancelled'] === 1) { echo '<div class="alert">この受注はキャンセルされています。</div>'; }
 
     // 4系統チェック
@@ -256,7 +265,8 @@ function kv_admin_order(): void
            . '<input type="hidden" name="on" value="' . ($on ? '0' : '1') . '">'
            . '<div><b>' . $label . '</b> ' . ($on ? '✓ 完了' : '未') . '</div>'
            . ($at ? '<div class="src">' . kv_e(substr((string)$at, 0, 16)) . '</div>' : '')
-           . (!$on ? '<label class="src"><input type="checkbox" name="send_mail" value="1" checked> メールも送る</label><br>' : '')
+           . (!$on ? '<select name="send_mail" class="src" style="padding:4px;border:1px solid #cfdae4;border-radius:6px;margin:4px 0">'
+                   . '<option value="edit">メールを編集して送る</option><option value="1">メールをそのまま送る</option><option value="">メールは送らない</option></select><br>' : '')
            . '<button class="btn' . ($on ? ' gray' : '') . '" type="submit">'
            . ($on ? '取り消す' : '完了にする') . '</button></form>';
     }
@@ -322,10 +332,24 @@ function kv_admin_order(): void
 
     // メール送信
     echo '<form method="post" class="panel"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
-       . '<b>メールを送る</b><p class="src">宛先 ' . kv_e($o['email']) . '</p>'
-       . '<select name="sendmail" style="padding:8px;border:2px solid #cfdae4;border-radius:8px">';
-    foreach (kv_mail_defaults() as $k => $v) { echo '<option value="' . $k . '">' . kv_e($v[0]) . '</option>'; }
-    echo '</select> <button class="btn" type="submit">送信</button></form>';
+       . '<b>メールを送る</b><p class="src">宛先 ' . kv_e($o['email']) . '。テンプレートを選び「編集して送る」で、件名・本文を直してから送れます。</p>'
+       . '<select name="tpl" style="padding:8px;border:2px solid #cfdae4;border-radius:8px">';
+    foreach (kv_mail_labels() as $k => $label) { echo '<option value="' . $k . '"' . ($k === 'stock_ok' ? ' selected' : '') . '>' . kv_e($label) . '</option>'; }
+    echo '</select> <button class="btn" type="submit" formmethod="get" formaction="?" name="a" value="compose">編集して送る</button>'
+       . '<input type="hidden" name="id" value="' . (int)$id . '"></form>';
+
+    // 送ったメール（全文）
+    $mails = kv_order_mails($id);
+    if ($mails) {
+        echo '<div class="panel"><b>送ったメール</b>';
+        foreach ($mails as $m) {
+            echo '<details style="margin-top:8px"><summary>' . kv_e(substr((string)$m['at'], 0, 16)) . '　' . kv_e($m['subject'])
+               . ((int)$m['ok'] ? '' : ' <b style="color:#b42318">（送信できず）</b>') . '</summary>'
+               . '<p class="src">宛先 ' . kv_e($m['to_addr']) . ($m['cc'] ? '　Cc ' . kv_e($m['cc']) : '') . '</p>'
+               . '<pre style="white-space:pre-wrap;font-size:13px;background:#f7f9fb;border:1px solid #e3e9ee;border-radius:8px;padding:10px">' . kv_e($m['body']) . '</pre></details>';
+        }
+        echo '</div>';
+    }
 
     // 履歴
     echo '<div class="panel"><b>履歴</b><div class="scroll"><table class="t">'
@@ -395,6 +419,55 @@ function kv_admin_new(): void
 
 // ---------------- メールテンプレート ----------------
 
+/**
+ * メールの作成・編集・送信（おちゃのこネットの「メール送信」と同じく、送る前に件名・本文を直せる・2026-11-17）。
+ * テンプレートに受注の内容を差し込んだ状態から始め、宛先・Cc・件名・本文を直して送る。送った全文は受注明細に残る。
+ */
+function kv_admin_compose(): void
+{
+    $id = (int)($_GET['id'] ?? 0);
+    $o = kv_order($id);
+    if (!$o) { http_response_code(404); echo '受注が見つかりません'; return; }
+    $tpl = (string)($_GET['tpl'] ?? 'flag_other');
+    if (!isset(kv_mail_defaults()[$tpl])) { $tpl = 'flag_other'; }
+    $err = '';
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && kv_csrf_ok()) {
+        $to = trim((string)($_POST['to'] ?? '')); $cc = trim((string)($_POST['cc'] ?? ''));
+        $subj = trim((string)($_POST['subject'] ?? '')); $body = str_replace("\r\n", "\n", (string)($_POST['body'] ?? ''));
+        $valid = fn(string $s) => $s === '' || array_reduce(array_map('trim', explode(',', $s)), fn($c, $a) => $c && filter_var($a, FILTER_VALIDATE_EMAIL), true);
+        if ($to === '' || !$valid($to) || !$valid($cc)) { $err = '宛先・Cc のメールアドレスを確かめてください（複数はカンマ区切り）。'; }
+        elseif ($subj === '' || trim($body) === '') { $err = '件名と本文を入れてください。'; }
+        elseif (strpos($body, '〇') !== false && empty($_POST['force'])) { $err = '本文に「〇」が残っています（納期などの書き換え忘れ）。直すか、このまま送るなら「〇のまま送る」にチェックしてください。'; }
+        else {
+            $ok = kv_mail_send_text($id, $to, $cc, $subj, $body);
+            header('Location: ?a=order&id=' . $id . '&mailed=' . ($ok ? '1' : '0'));
+            exit;
+        }
+    } else {
+        [$subj, $body] = kv_mail_render($id, $tpl);
+        $to = (string)$o['email']; $cc = kv_shop('email');
+    }
+    kv_head('メールを送る', '', '/admin', ['noindex' => true]);
+    echo '<div class="wrap" style="max-width:900px">';
+    kv_admin_nav('orders');
+    echo '<nav class="crumb"><a href="?a=orders">受注一覧</a> › <a href="?a=order&id=' . $id . '">' . kv_e($o['code']) . '</a> › メールを送る</nav><h1>メールを送る</h1>';
+    if ($err) { echo '<div class="alert">' . kv_e($err) . '</div>'; }
+    echo '<form method="get" class="filters"><input type="hidden" name="a" value="compose"><input type="hidden" name="id" value="' . $id . '">'
+       . '<span class="src">テンプレート：</span><select name="tpl" style="padding:7px;border:2px solid #cfdae4;border-radius:8px">';
+    foreach (kv_mail_labels() as $k => $label) { echo '<option value="' . $k . '"' . ($k === $tpl ? ' selected' : '') . '>' . kv_e($label) . '</option>'; }
+    echo '</select> <button class="btn gray" type="submit">このテンプレートで作り直す</button></form>';
+    $in = 'width:100%;padding:8px;border:2px solid #cfdae4;border-radius:8px;box-sizing:border-box';
+    echo '<form method="post" class="panel"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
+       . '<label class="src">宛先</label><input name="to" value="' . kv_e($to) . '" style="' . $in . '">'
+       . '<label class="src" style="display:block;margin-top:8px">Cc（店の控え。要らなければ空に）</label><input name="cc" value="' . kv_e($cc) . '" style="' . $in . '">'
+       . '<label class="src" style="display:block;margin-top:8px">件名</label><input name="subject" value="' . kv_e($subj) . '" style="' . $in . '">'
+       . '<label class="src" style="display:block;margin-top:8px">本文</label><textarea name="body" rows="24" style="' . $in . ';font-family:ui-monospace,monospace;font-size:13px">' . kv_e($body) . '</textarea>'
+       . ($err && strpos($err, '〇') !== false ? '<label class="src"><input type="checkbox" name="force" value="1"> 〇のまま送る</label>' : '')
+       . '<p><button class="btn" type="submit" onclick="return confirm(\'この内容で送信します。よろしいですか？\')">送信する</button> '
+       . '<a class="btn gray" href="?a=order&id=' . $id . '">送らずに戻る</a></p></form></div>';
+    kv_footer();
+}
+
 function kv_admin_mail_templates(): void
 {
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && kv_csrf_ok()) {
@@ -410,11 +483,12 @@ function kv_admin_mail_templates(): void
     kv_admin_nav('mail');
     echo '<h1>メールテンプレート</h1>';
     if (!empty($_GET['saved'])) { echo '<div class="note">保存しました。</div>'; }
-    echo '<p class="src">使える差し込み: {code} {name} {total} {items} {bank} {next} {tracking} {shop} {email}</p>'
+    echo '<p class="src">使える差し込み: {code} 受注番号 / {name} お名前 / {total} 合計 / {items} 明細 / {bank} 注文時の振込の案内 / {bank_account} 振込先の口座 / {next} 今後の流れ / {tracking} 送り状番号 / {pay_url} カードのお支払いページ / {shop} 店名 / {email} 店のメール</p>'
+       . '<p class="src">ここで直すのは「ひな形」です。1件ずつのメールは、受注明細の「メールを送る」で、送る前に件名・本文を直せます。</p>'
        . '<form method="post"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">';
     foreach (kv_mail_defaults() as $k => $d) {
         [$subj, $body] = kv_mail_template($k);
-        echo '<div class="panel"><b>' . kv_e($k) . '</b>'
+        echo '<div class="panel"><b>' . kv_e(kv_mail_labels()[$k] ?? $k) . '</b> <span class="src">' . kv_e($k) . '</span>'
            . '<label class="src" style="display:block;margin-top:8px">件名</label>'
            . '<input name="subject[' . $k . ']" value="' . kv_e($subj) . '" style="width:100%;padding:8px;border:2px solid #cfdae4;border-radius:8px">'
            . '<label class="src" style="display:block;margin-top:8px">本文</label>'

@@ -53,6 +53,11 @@ function kv_order_schema(): void
     CREATE TABLE IF NOT EXISTS mail_templates (
       key TEXT PRIMARY KEY, subject TEXT, body TEXT
     );
+    CREATE TABLE IF NOT EXISTS order_mails (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL, at TEXT NOT NULL, to_addr TEXT, cc TEXT, subject TEXT, body TEXT, ok INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS ix_mails_order ON order_mails(order_id);
     ");
 }
 
@@ -211,12 +216,50 @@ function kv_mail_defaults(): array
         'flag_received' => ['ご注文を承りました（{code}）',
             "{name} 様\n\nご注文を承りました。\n\n受注番号: {code}\n\n{shop}\n"],
         'flag_other' => ['ご連絡（{code}）', "{name} 様\n\n受注番号 {code} についてご連絡します。\n\n{shop}\n"],
+        // 在庫・納期を確かめたあとの案内（2026-11-17 追加）。納期はメール作成画面で書き換えてから送る
+        'stock_ok' => ['納期とお振込先のご案内（{code}）',
+            "{name} 様\n\nメーカーに確認したところ、納期は次のとおりです。\n\n受注番号: {code}\n{items}\n\n"
+            . "納期: ご入金を確認してから、〇営業日程度\n\n"
+            . "納期がかかりますので、ご入金の前であれば、キャンセルしていただいても差し支えございません。\n"
+            . "この納期でよろしければ、下記へお振込みをお願いいたします。\n\n{bank_account}\n金額: {total}円（税込・送料無料）\n"
+            . "※振込手数料は、お客様のご負担でお願いいたします。\n\n"
+            . "ご入金を確認しましたら、メーカーに手配し、発送の予定をあらためてお知らせいたします。\n\n{shop}\n{email}\n"],
         'stripe_invoice' => ['お支払いのご案内（{code}）',
             "{name} 様\n\nご注文いただいた商品の在庫・納期・送料を確認しました。\n"
             . "下のページから、クレジットカードでお支払いください（お支払い期限は7日後です）。\n\n"
             . "{pay_url}\n\n受注番号: {code}\nお支払い金額: {total}円（税込）\n\n{items}\n\n"
             . "お支払いを確認したら、あらためてメールでお知らせします。\n\n{shop}\n{email}\n"],
     ];
+}
+
+/** テンプレートの名前（管理画面に出す）。 */
+function kv_mail_labels(): array
+{
+    return ['order_received' => 'ご注文受付（注文時に自動）', 'order_paid_card' => 'カード払いのご注文受付（決済後に自動）',
+            'stock_ok' => '納期とお振込先のご案内', 'flag_received' => '受注の完了', 'flag_paid' => '入金の確認',
+            'flag_shipped' => '発送のご連絡', 'flag_other' => 'その他のご連絡（自由に書く）', 'stripe_invoice' => 'カード払いのお支払いページの案内'];
+}
+
+/** 管理画面で書いたメールを、そのままの件名・本文で送る（Cc 可）。送った全文を order_mails に残す。 */
+function kv_mail_send_text(int $oid, string $to, string $cc, string $subj, string $body): bool
+{
+    kv_order_schema();
+    $from = kv_shop('email');
+    $h = "From: " . mb_encode_mimeheader(kv_shop('name')) . " <$from>\r\n"
+       . "Reply-To: $from\r\nContent-Type: text/plain; charset=UTF-8\r\n";
+    $ok = kv_mail($to, mb_encode_mimeheader($subj), $body, $h, $cc);
+    kv_db()->prepare('INSERT INTO order_mails (order_id,at,to_addr,cc,subject,body,ok) VALUES (?,?,?,?,?,?,?)')
+           ->execute([$oid, date('Y-m-d H:i:s'), $to, $cc, $subj, $body, $ok ? 1 : 0]);
+    kv_log($oid, 'mail', ($ok ? '送信' : '送信できず') . ': ' . $subj . ' → ' . $to . ($cc !== '' ? '（Cc ' . $cc . '）' : ''));
+    return (bool)$ok;
+}
+
+function kv_order_mails(int $oid): array
+{
+    kv_order_schema();
+    $st = kv_db()->prepare('SELECT * FROM order_mails WHERE order_id=? ORDER BY id DESC');
+    $st->execute([$oid]);
+    return $st->fetchAll();
 }
 
 function kv_mail_template(string $key): array
@@ -254,6 +297,8 @@ function kv_mail_render(int $oid, string $key): array
                     : "【お支払い】\nクレジットカード（ご注文時のお支払い画面）。お支払いを確認したら、あらためてお知らせします。",
         '{pay_url}' => $o['payment'] === 'stripe' && function_exists('kv_stripe_pay_url') ? kv_stripe_pay_url($o) : '',
         '{tracking}' => $o['tracking'] ? '送り状番号: ' . $o['tracking'] : '',
+        // 口座そのもの（kv_config.php の shop.bank_account）。{bank} は注文時の案内文なので別にする
+        '{bank_account}' => "【お振込先】\n" . (kv_shop('bank_account') !== '' ? kv_shop('bank_account') : kv_shop('bank')),
         '{shop}' => kv_shop('name') . '（' . kv_shop('company') . '）',
         '{email}' => kv_shop('email'),
     ];
@@ -279,6 +324,8 @@ function kv_mail_send(int $oid, string $key): bool
        . "Reply-To: $from\r\nContent-Type: text/plain; charset=UTF-8\r\n";
     $ok = kv_mail($o['email'], mb_encode_mimeheader($subj), $body, $h);
     kv_log($oid, 'mail', ($ok ? '送信' : '送信できず') . ': ' . $key . ' → ' . $o['email']);
+    kv_db()->prepare('INSERT INTO order_mails (order_id,at,to_addr,cc,subject,body,ok) VALUES (?,?,?,?,?,?,?)')
+           ->execute([$oid, date('Y-m-d H:i:s'), $o['email'], '', $subj, $body, $ok ? 1 : 0]);
     if (in_array($key, ['order_received', 'order_paid_card'], true) && $from !== '') {
         // 店にも同じ内容を送る（新しい注文に気づけるように）。カード払いは決済が終わってから
         $note = ($key === 'order_paid_card' ? "新しい注文が入り、カードでのお支払いも確認しました。" : "新しい注文が入りました。")

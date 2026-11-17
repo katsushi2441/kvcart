@@ -284,8 +284,10 @@ function kv_maker_name_exists(string $name): bool
  * 店のアドレスで認証して SMTP で送る（SPF・DKIM が通り、Gmail で迷惑メールにされにくい）。
  * 無ければレンタルサーバーの mail() で送る。
  */
-function kv_mail(string $to, string $subject, string $body, string $headers = ''): bool
+function kv_mail(string $to, string $subject, string $body, string $headers = '', string $cc = ''): bool
 {
+    $cc = trim(str_replace(["\r", "\n"], '', $cc));
+    if ($cc !== '') { $headers = rtrim($headers) . "\r\nCc: " . $cc . "\r\n"; }
     if (!defined('KV_SMTP') || !is_array(KV_SMTP) || empty(KV_SMTP['host'])) {
         return @mail($to, $subject, $body, $headers);
     }
@@ -313,7 +315,7 @@ function kv_mail(string $to, string $subject, string $body, string $headers = ''
         && $cmd(base64_encode($c['user']), [334])
         && $cmd(base64_encode($c['pass']), [235])
         && $cmd('MAIL FROM:<' . $from . '>', [250]);
-    $rcpts = array_filter(array_map('trim', explode(',', $to)));
+    $rcpts = array_filter(array_map('trim', explode(',', $to . ($cc !== '' ? ',' . $cc : ''))));
     foreach ($rcpts as $r) {
         if (!$ok) { break; }
         $addr = preg_match('/<([^>]+)>/', $r, $m) ? $m[1] : $r;
