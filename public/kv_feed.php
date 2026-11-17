@@ -10,6 +10,10 @@
  * - 価格は税込（日本の表示の決まり）。送料は全国0円（北海道・沖縄・離島は Merchant Center の送料設定で別に決める）
  * - 在庫: 在庫数を管理しない直送品と在庫ありは in_stock、在庫切れでも受ける商品は backorder（入荷予定日は14日後）、
  *   受けない在庫切れは out_of_stock（kv_stock.php の設定に合わせる）
+ * - 画像（2026-11-17 追記）: Google は 500×500 未満の画像を 2027-01-31 から表示しない。小さい画像は白地 800×800 に拡大した
+ *   写しを gimg/<元の名前>.jpg に置き（kvcart-sales/gshop/img500/make500.py）、フィードだけそちらを使う。店の商品ページの画像は変えない。
+ *   「画像はありません」「NO IMAGE」などの仮画像やメーカーロゴは Google が商品画像と認めない（不承認）ので、
+ *   kv_data/gshop_noimage.json（ファイル名 => 理由）に載った画像の商品はフィードに入れない
  * - 1万点を超えるので、kv_data/gshop_feed.xml に作り置きし、商品が更新されたか6時間たったら作り直す
  */
 declare(strict_types=1);
@@ -33,17 +37,23 @@ function kv_gshop_build(string $path): array
     // Google の商品カテゴリ。おちゃのこネット時代のフィード（gfeed.xml）で商品ごとに付けていたものを引き継ぐ（kv_data/gshop_gpc.json: 商品ID => カテゴリ）
     $gpc = is_file(KV_DATA . '/gshop_gpc.json') ? (json_decode((string)file_get_contents(KV_DATA . '/gshop_gpc.json'), true) ?: []) : [];
     $cats = []; foreach ($db->query('SELECT id,name,parent_name FROM categories') as $c) { $cats[(int)$c['id']] = trim(($c['parent_name'] ? $c['parent_name'] . ' > ' : '') . $c['name']); }
+    $noimg = is_file(KV_DATA . '/gshop_noimage.json') ? (json_decode((string)file_get_contents(KV_DATA . '/gshop_noimage.json'), true) ?: []) : [];
     $base = rtrim(defined('KV_ORIGIN') ? KV_ORIGIN : kv_site_url(''), '/');
     $tmp = $path . '.tmp';
     $fh = fopen($tmp, 'w');
     $x = fn($s) => htmlspecialchars((string)$s, ENT_XML1 | ENT_QUOTES, 'UTF-8');
     fwrite($fh, '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . '<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0"><channel>'
         . '<title>' . $x(kv_shop('name')) . '</title><link>' . $x($base . '/') . '</link><description>' . $x(kv_shop('tagline')) . "</description>\n");
-    $n = 0; $skip = ['画像なし' => 0];
+    $n = 0; $skip = ['画像なし' => 0, '仮画像' => 0, '拡大画像を使用' => 0];
     $bo = date('Y-m-d', strtotime('+14 days')) . 'T00:00+0900';
     $st = $db->query("SELECT * FROM products WHERE hidden=0 AND price>0 AND COALESCE(price_unspecified,0)=0 ORDER BY id");
     while ($p = $st->fetch()) {
         if ((string)$p['image_url'] === '') { $skip['画像なし']++; continue; }
+        $imgName = basename((string)parse_url((string)$p['image_url'], PHP_URL_PATH));
+        if (isset($noimg[$imgName])) { $skip['仮画像']++; continue; }
+        $big = 'gimg/' . pathinfo($imgName, PATHINFO_FILENAME) . '.jpg';
+        $img = is_file(__DIR__ . '/' . $big) ? $base . '/' . $big : kv_abs((string)$p['image_url']);
+        if ($img !== kv_abs((string)$p['image_url'])) { $skip['拡大画像を使用']++; }
         $title = kv_gshop_text((string)$p['name'], 150);
         $mk = $makers[(int)$p['maker_id']] ?? '';
         $mdl = kv_model_display($p['model_number'], $p['name']);
@@ -57,7 +67,7 @@ function kv_gshop_build(string $path): array
         $jan = kv_jan($p);
         $incl = kv_price_incl($p);
         $item = '<item><g:id>' . (int)$p['id'] . '</g:id><title>' . $x($title) . '</title><description>' . $x($desc) . '</description>'
-              . '<link>' . $x($base . '/product/' . (int)$p['id']) . '</link><g:image_link>' . $x(kv_abs((string)$p['image_url'])) . '</g:image_link>'
+              . '<link>' . $x($base . '/product/' . (int)$p['id']) . '</link><g:image_link>' . $x($img) . '</g:image_link>'
               . '<g:availability>' . $avail . '</g:availability>' . ($avail === 'backorder' ? '<g:availability_date>' . $bo . '</g:availability_date>' : '')
               . '<g:price>' . (int)$incl . ' JPY</g:price><g:condition>new</g:condition>'
               . ($mk !== '' ? '<g:brand>' . $x($mk) . '</g:brand>' : '')
