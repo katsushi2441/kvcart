@@ -17,9 +17,7 @@ LOGO = "/home/kojima/work/exbridge_jp/images/logo-mark-128.png"
 
 
 def main():
-    db = sqlite3.connect(os.path.join(ROOT, "public", "kv_data", "shop.sqlite"))
-    n = db.execute("SELECT COUNT(*) FROM products WHERE hidden=0").fetchone()[0]
-    mk = db.execute("SELECT COUNT(DISTINCT maker_id) FROM products WHERE hidden=0").fetchone()[0]
+    n = mk = 0
     img = Image.new("RGB", (W, H), "#ffffff")
     dr = ImageDraw.Draw(img)
     dr.rectangle([0, 0, W, 16], fill="#0a9a8f")
@@ -32,16 +30,23 @@ def main():
         lg.thumbnail((96, 96))
         img.paste(lg, (x, 70), lg)
         dr.text((x + 112, 118), "株式会社エクスブリッジ", font=f(FR, 30), fill="#3d4b57", anchor="lm")
-    dr.text((x, 270), "X-Direct", font=f(FB, 110), fill="#12202f", anchor="lm")
-    dr.text((x, 370), "仕事に役立つアイテムを直送・格安で", font=f(FB, 46), fill="#0a7d74", anchor="lm")
-    pills = [f"{mk}メーカー・{n:,}点", "メーカー直送", "銀行振込・カード"]
+    dr.text((x, 250), "X-Direct", font=f(FB, 104), fill="#12202f", anchor="lm")
+    dr.text((x, 342), "仕事に役立つアイテムを直送・格安で", font=f(FB, 42), fill="#0a7d74", anchor="lm")
+    # AI駆動EC（2026-11-17 ユーザー指示「AI駆動EC Kurage Vibe-Cart AI完全対応EC を入れたい」）
+    tag = "AI駆動EC"
+    tw = dr.textlength(tag, font=f(FB, 32)) + 40
+    dr.rounded_rectangle([x, 395, x + tw, 451], radius=12, fill="#12202f")
+    dr.text((x + tw / 2, 423), tag, font=f(FB, 32), fill="#ffffff", anchor="mm")
+    dr.text((x + tw + 18, 423), "Kurage Vibe-Cart｜AI完全対応EC", font=f(FB, 34), fill="#12202f", anchor="lm")
+    # 点数は古くなるので出さない（看板は数字より言葉）
+    pills = ["メーカー直送", "送料原則無料", "銀行振込・カード"]
     px = x
     for p in pills:
-        w = dr.textlength(p, font=f(FB, 30)) + 44
-        dr.rounded_rectangle([px, 440, px + w, 496], radius=28, fill="#ffffff", outline="#a8ded8", width=2)
-        dr.text((px + w / 2, 468), p, font=f(FB, 30), fill="#0a726b", anchor="mm")
-        px += w + 16
-    dr.text((x, 560), "www.exdirect.net", font=f(FR, 28), fill="#5d6b7a", anchor="lm")
+        w = dr.textlength(p, font=f(FB, 28)) + 40
+        dr.rounded_rectangle([px, 478, px + w, 530], radius=26, fill="#ffffff", outline="#a8ded8", width=2)
+        dr.text((px + w / 2, 504), p, font=f(FB, 28), fill="#0a726b", anchor="mm")
+        px += w + 14
+    dr.text((x, 578), "www.exdirect.net", font=f(FR, 28), fill="#5d6b7a", anchor="lm")
     m = Image.open(MASCOT).convert("RGBA")
     m.thumbnail((230, 260))
     img.paste(m, (W - m.width - 40, 60), m)
