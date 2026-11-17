@@ -221,7 +221,9 @@ function kv_stripe_handle(array $ev): string
             if ((int)$o['f_paid'] === 1) { return 'already paid'; }
             kv_log($oid, 'stripe', 'カードでのお支払いを確認しました: ' . $obj['id'] . ' / ' . ($obj['payment_intent'] ?? '')
                    . ' ' . number_format((int)($obj['amount_total'] ?? 0)) . '円');
-            kv_order_flag($oid, 'paid', true, true);
+            // 注文時のカード決済は、ここで初めて受付メールを送る（ご注文とお支払いの確認を1通で）。店にも通知する
+            kv_order_flag($oid, 'paid', true, false);
+            kv_mail_send($oid, 'order_paid_card');
             return 'paid';
         case 'checkout.session.async_payment_failed':
             kv_log($oid, 'stripe', 'お支払いが失敗しました: ' . $obj['id']);

@@ -99,7 +99,14 @@ function kv_order_create(array $cart, array $post): int
     }
     kv_log($oid, 'created', '注文を受け付けました');
     $db->commit();
-    kv_mail_send($oid, 'order_received');
+    // カード払いは、決済が終わってから受付メールを送る（2026-11-17 ユーザー指示「カード決済してから注文受付の自動メール」）。
+    // 決済の完了は Stripe の通知（kv_stripe_handle の checkout.session.completed）で受け、order_paid_card を送る
+    $o = kv_order($oid);
+    if ($o && $o['payment'] === 'stripe') {
+        kv_log($oid, 'mail', 'カード払いのため、受付メールはお支払いの完了後に送ります');
+    } else {
+        kv_mail_send($oid, 'order_received');
+    }
     return $oid;
 }
 
@@ -192,6 +199,10 @@ function kv_mail_defaults(): array
         'order_received' => ['ご注文ありがとうございます（{code}）',
             "{name} 様\n\nご注文ありがとうございます。下記の内容で承りました。\n\n"
             . "受注番号: {code}\n合計: {total}円（税込）\n\n{items}\n\n{next}\n\n{shop}\n{email}\n"],
+        'order_paid_card' => ['ご注文とお支払いを確認しました（{code}）',
+            "{name} 様\n\nご注文と、クレジットカードでのお支払いを確認しました。ありがとうございます。\n\n"
+            . "受注番号: {code}\nお支払い金額: {total}円（税込）\n\n{items}\n\n"
+            . "【今後の流れ】\nメーカーに在庫と納期を確認し、納期をメールでお知らせします。\n\n{shop}\n{email}\n"],
         'flag_paid' => ['ご入金を確認しました（{code}）',
             "{name} 様\n\nご入金を確認しました。ありがとうございます。\n"
             . "準備ができ次第、発送します。\n\n受注番号: {code}\n合計: {total}円\n\n{shop}\n"],
@@ -268,9 +279,10 @@ function kv_mail_send(int $oid, string $key): bool
        . "Reply-To: $from\r\nContent-Type: text/plain; charset=UTF-8\r\n";
     $ok = kv_mail($o['email'], mb_encode_mimeheader($subj), $body, $h);
     kv_log($oid, 'mail', ($ok ? '送信' : '送信できず') . ': ' . $key . ' → ' . $o['email']);
-    if ($key === 'order_received' && $from !== '') {
-        // 店にも同じ内容を送る（新しい注文に気づけるように）
-        $note = "新しい注文が入りました。お客様には下の内容で注文確認メールを送っています（送信: " . ($ok ? '成功' : '失敗') . "）。\n"
+    if (in_array($key, ['order_received', 'order_paid_card'], true) && $from !== '') {
+        // 店にも同じ内容を送る（新しい注文に気づけるように）。カード払いは決済が終わってから
+        $note = ($key === 'order_paid_card' ? "新しい注文が入り、カードでのお支払いも確認しました。" : "新しい注文が入りました。")
+              . "お客様には下の内容でメールを送っています（送信: " . ($ok ? '成功' : '失敗') . "）。\n"
               . "お客様: " . $o['name'] . ' ' . ($o['company'] ?? '') . " / " . $o['email'] . " / " . ($o['tel'] ?? '') . "\n"
               . "発注用の社内型番: " . implode(' / ', array_map(static fn($it) => $it['model_number'] . ' ×' . (int)$it['qty'], kv_order_items($oid))) . "\n"
               . "------------------------------------\n";
