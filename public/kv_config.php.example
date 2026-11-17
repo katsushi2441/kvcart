@@ -27,6 +27,8 @@ $KV_SHOP = [
     'bank_account' => "",
     // 請求書・領収書（帳票PDF）に印字する。適格請求書発行事業者の登録番号（T＋13桁）と郵便番号
     'invoice_no' => '',
+    // Google Merchant Center・Search Console の所有権確認タグの content（カンマ区切りで複数可）
+    'google_site_verification' => '',
     'zip'        => '',
     'ship_note'=> '送料は商品ページの表記に従います。',
 ];

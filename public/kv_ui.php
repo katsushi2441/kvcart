@@ -60,6 +60,10 @@ function kv_head(string $title, string $desc = '', string $path = '/', array $ex
            . '</script>';
     }
     if (!empty($extra['noindex'])) { echo '<meta name="robots" content="noindex">'; }
+    // Google の所有権確認（Merchant Center・Search Console）。kv_config.php の shop.google_site_verification（カンマ区切りで複数可）
+    foreach (array_filter(array_map('trim', explode(',', kv_shop('google_site_verification')))) as $gv) {
+        echo '<meta name="google-site-verification" content="' . kv_e($gv) . '">';
+    }
     // アクセス記録（2026-11-16）。人は JavaScript で simpletrack.php に知らせる（ほかのサイトと同じ形）。X-Direct のときだけ
     if (kv_is_xdirect()) {
         echo '<script>(function(){var s=document.createElement("script");s.src="' . kv_url('simpletrack.php')
