@@ -19,7 +19,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "outputs" / "kvcart.zip"
-EXCLUDE = ["public/img/*.jpg", "public/google*.html", "outputs/*", ".gitignore"]
+EXCLUDE = ["public/img/*.jpg", "public/google*.html", "public/[0-9a-f]*[0-9a-f].txt",  # 32桁の .txt は当店の IndexNow の鍵
+           "outputs/*", ".gitignore"]
 
 
 def files() -> list:
