@@ -1002,6 +1002,29 @@ function kv_page_why_low_price(): void
     kv_footer();
 }
 
+/** 商材募集の「信頼できる運営会社」の列のデータ（kv_data/supplier_social.json）。無ければ空。 */
+function kv_supplier_social(): array
+{
+    $f = __DIR__ . '/kv_data/supplier_social.json';
+    if (!is_file($f)) { return []; }
+    $d = json_decode((string)file_get_contents($f), true);
+    return is_array($d) && !empty($d['counts']) ? $d : [];
+}
+
+/** 商材募集のよくある質問（本文と FAQPage で同じものを使う。事実だけ）。 */
+function kv_supplier_faq(): array
+{
+    $soc = kv_supplier_social();
+    return [
+        ['X-Directに商品を掲載するのに費用はかかりますか？', '初期費用・出品料・月額はかかりません。当社が仕入れて販売する形なので、モールのような販売手数料もいただきません。'],
+        ['どんな商品を募集していますか？', '工具・機械・設備・計測機器・厨房機器・バッテリーなど、工場・建設・農業・飲食店などの法人のお客様が使う商品です。メーカー直送（または問屋さまからの直送）に対応できる商品を募集しています。'],
+        ['掲載までにどのくらいかかりますか？', '価格表と商品情報（カタログやホームページで可）をいただいてから、数日で掲載します。商品ページは当社がAIで作ります。'],
+        ['価格表や商品データが整っていなくても相談できますか？', 'できます。商品・価格・在庫を管理する業務システムを、AIを使って低コストで開発し、AI-IT顧問で運用まで一緒に進めることもできます。'],
+        ['運営会社はどんな会社ですか？', '名古屋の株式会社エクスブリッジです。2004年に創業し、業務システムの開発とネット通販を続けています。'
+            . ($soc ? 'X公式アカウント @' . $soc['account']['handle'] . ' は、国会議員' . (int)$soc['counts']['giin'] . '人やフォロワー1万人を超えるインフルエンサーにフォローされています。' : '')],
+    ];
+}
+
 /**
  * 商材募集（/supplier・2026-11-16）。メーカー・問屋に、X-Direct での取り扱いを呼びかける。
  * 当社の店（kv_is_xdirect）のときだけ出す。送信は kv_mail() で店のアドレスへ。
@@ -1034,12 +1057,28 @@ function kv_page_supplier(): void
 
     $s = kv_stats();
     $makers = array_slice(array_map(fn($m) => $m['name'], kv_makers()), 0, 20);
-    $desc = '工具・機械・設備のメーカー・問屋さまへ。出品の初期費用はかかりません。モールやSaaSのECのような手間・手数料なしで、X-Direct（取扱 ' . number_format($s['products'])
+    $desc = '販路拡大をお考えの工具・機械・設備のメーカー・問屋さまへ。出品の初期費用はかかりません。モールやSaaSのECのような手間・手数料なしで、X-Direct（取扱 ' . number_format($s['products'])
           . '点）からメーカー直送で全国の法人へ販売しませんか。商品データの用意が手間なら、AIで商品管理の業務システムも低コストで開発します。';
-    $jsonld = ['@context' => 'https://schema.org', '@type' => 'WebPage', 'name' => '商材募集｜メーカー・問屋さまへ',
-               'description' => $desc, 'url' => kv_origin() . '/supplier',
-               'publisher' => ['@type' => 'Organization', 'name' => kv_shop('company')]];
-    kv_head('商材募集｜メーカー・問屋さまへ', $desc, '/supplier', ['jsonld' => $jsonld]);
+    $soc = kv_supplier_social();
+    $o = kv_origin();
+    // 冒頭の要約（AI の回答に引用されやすい事実の文。2026-11-17 SEO/AEO/GEO）
+    $lead = 'X-Direct（株式会社エクスブリッジ・2004年創業・名古屋）は、工具・機械・設備のメーカー・問屋さまの商材を募集しています。'
+          . '掲載の初期費用・出品料・月額はかからず、商品ページは当社がAIで作ります。注文が入るたびに当社が発注し、お客様へは直送していただく形で、全国の法人のお客様に販売します。';
+    $faq = kv_supplier_faq();
+    $org = ['@type' => 'Organization', '@id' => 'https://exbridge.jp/#organization', 'name' => kv_shop('company'), 'url' => 'https://exbridge.jp/',
+            'foundingDate' => '2004-04', 'address' => ['@type' => 'PostalAddress', 'addressLocality' => '名古屋市', 'addressRegion' => '愛知県', 'addressCountry' => 'JP'],
+            'sameAs' => array_values(array_filter(['https://x.com/xb_bittensor', $soc ? $soc['portal'] : '']))];
+    $jsonld = ['@context' => 'https://schema.org', '@graph' => [
+        ['@type' => 'WebPage', 'name' => '商材募集｜メーカー・問屋さまの販路拡大', 'description' => $desc, 'url' => $o . '/supplier',
+         'about' => '販路拡大', 'audience' => ['@type' => 'BusinessAudience', 'audienceType' => 'メーカー・問屋・卸'], 'publisher' => ['@id' => 'https://exbridge.jp/#organization']],
+        $org,
+        ['@type' => 'BreadcrumbList', 'itemListElement' => [
+            ['@type' => 'ListItem', 'position' => 1, 'name' => 'トップ', 'item' => $o . '/'],
+            ['@type' => 'ListItem', 'position' => 2, 'name' => '商材募集', 'item' => $o . '/supplier']]],
+        ['@type' => 'FAQPage', 'mainEntity' => array_map(fn($x) => ['@type' => 'Question', 'name' => $x[0], 'acceptedAnswer' => ['@type' => 'Answer', 'text' => $x[1]]], $faq)],
+    ]];
+    kv_head('商材募集｜メーカー・問屋さまの販路拡大（出品の初期費用なし）', $desc, '/supplier',
+            ['jsonld' => $jsonld, 'image' => is_file(__DIR__ . '/img/og/supplier.png') ? 'img/og/supplier.png' : '']);
     echo '<style>.sup-hero{background:linear-gradient(135deg,#0e5f8a,#127a7a);color:#fff;border-radius:14px;padding:26px 22px;margin:8px 0 18px}'
        . '.sup-hero h1{color:#fff;font-size:26px;line-height:1.4;margin:0 0 8px}.sup-hero p{margin:0;font-size:15px;opacity:.95}'
        . '.sup-hero .btn{margin-top:14px;background:#ffb400;color:#2a1d00;border:0}'
@@ -1053,7 +1092,13 @@ function kv_page_supplier(): void
        . '.sup-flow div{background:#f5f9fa;border:1px solid #dde7ea;border-radius:10px;padding:12px;font-size:13.5px;line-height:1.6}'
        . '.sup-flow div:before{counter-increment:f;content:"STEP " counter(f);display:block;font-weight:700;color:#127a7a;font-size:12px}'
        . '.sup-makers{font-size:13.5px;line-height:1.9;color:#33414d}'
-       . '@media(max-width:640px){.sup-hero h1{font-size:21px}.sup-nums{gap:6px}.sup-nums div{padding:10px 4px}.sup-nums b{font-size:18px}.sup-cards,.sup-flow{grid-template-columns:1fr}}</style>';
+       . '.sup-social{background:#f4f8fd;border:1px solid #dbe6f3;border-radius:14px;padding:14px;margin:0 0 14px}'
+       . '.sup-banner img{display:block;width:100%;height:auto;border-radius:10px;margin:0 0 12px}'
+       . '.sup-row h3{font-size:15px;margin:12px 0 8px}.sup-avs{display:flex;flex-wrap:wrap;gap:10px 8px}'
+       . '.sup-av{width:88px;text-align:center;text-decoration:none;color:#17242b;font-size:11.5px;line-height:1.35}'
+       . '.sup-av img{display:block;width:56px;height:56px;object-fit:cover;border-radius:50%;margin:0 auto 4px;border:2px solid #fff;box-shadow:0 0 0 1px #cfdbe8;background:#fff}'
+       . '.sup-av b{display:block;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sup-av span{display:block;color:#5b6b78;font-size:10.5px}'
+       . '@media(max-width:640px){.sup-avs{gap:8px 4px}.sup-av{width:72px;font-size:10.5px}.sup-av img{width:46px;height:46px}.sup-av span{font-size:9.5px}.sup-hero h1{font-size:21px}.sup-nums{gap:6px}.sup-nums div{padding:10px 4px}.sup-nums b{font-size:18px}.sup-cards,.sup-flow{grid-template-columns:1fr}}</style>';
     echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a> › 商材募集</nav>';
 
     if ($sent) {
@@ -1067,6 +1112,7 @@ function kv_page_supplier(): void
        . '<p>メーカー・問屋さまへ。御社の商品を、メーカー直送で全国の法人のお客様に販売します。<br>'
        . '<b>出品の初期費用はかかりません。</b>モールやネットショップサービスのような手数料・月額もいただきません。</p>'
        . '<a class="btn" href="#supplier-form">取り扱いの相談をする</a></section>';
+    echo '<p class="lead">' . kv_e($lead) . '</p>';
 
     echo '<div class="sup-nums"><div><b>' . number_format($s['products']) . '</b><span>掲載商品</span></div>'
        . '<div><b>' . (int)$s['makers'] . '社</b><span>取り扱いメーカー</span></div>'
@@ -1077,14 +1123,38 @@ function kv_page_supplier(): void
        . '工場・建設・農業・飲食店など、法人のお客様からのご注文が中心です。</p>'
        . '<p class="sup-makers">主な取り扱いメーカー：' . kv_e(implode('、', $makers)) . '</p></div>';
 
-    // 運営会社の信頼（2026-11-17 ユーザー指示: 2004年創業・X公式アカウント・フォロワーポータル）。
-    // 数字は 2026-11-17 の実測（@xb_bittensor のフォロワー・kfollowers の議員/インフルエンサー/企業の数）。フォローされた方法は書かない（ノウハウ）
-    echo '<h2>信頼できる運営会社です</h2><div class="sup-cards">'
-       . '<div><h3>2004年創業・名古屋</h3><p>株式会社エクスブリッジは2004年の創業から20年以上、名古屋で業務システムの開発とネット通販を続けています。大学・研究機関への納入実績もあります。</p></div>'
-       . '<div><h3>国会議員22人がフォローするX公式アカウント</h3><p>当社のX公式アカウント <a href="https://x.com/xb_bittensor">@xb_bittensor</a> は、フォロワー4,000人超。党首・総務大臣を含む国会議員22人、首長、フォロワー1万人を超えるインフルエンサー48人にフォローされています（2026年11月時点）。</p></div>'
-       . '</div>'
-       . '<p class="src">フォローしてくださった企業・インフルエンサー・国会議員は「<a href="https://exbridge.jp/kfollowers/#ref=exdirect-supplier">Kurage フォロワーポータル</a>」で紹介しています。'
-       . 'くわしくはブログ「<a href="https://exbridge.jp/vibeblog/2026-11-17-hanro-kakudai-maker-tonya-ai-x-direct.html#ref=exdirect-supplier">販路拡大をメーカー・問屋がAIで進める方法</a>」をご覧ください。'
+    // 運営会社の信頼（2026-11-17 ユーザー指示: 2004年創業・X公式アカウント・フォロワーポータルのように見せる）。
+    // 数字とアイコンは kv_data/supplier_social.json（kvcart-sales/supplier/build_social.py がフォロワーポータルから作る）。
+    // X のアイコンはポータルと同じく pbs.twimg.com を参照表示。フォローされた方法は書かない（ノウハウ）
+    $soc = kv_supplier_social();
+    echo '<h2 id="trust">信頼できる運営会社です</h2>';
+    echo '<div class="sup-cards">'
+       . '<div><h3>2004年創業・名古屋</h3><p>株式会社エクスブリッジは2004年の創業から20年以上、名古屋で業務システムの開発とネット通販を続けています。大学・研究機関への納入実績もあります。</p></div>';
+    if ($soc) {
+        $c = $soc['counts'];
+        echo '<div><h3>国会議員' . (int)$c['giin'] . '人がフォローするX公式アカウント</h3><p>当社のX公式アカウント <a href="https://x.com/' . kv_e($soc['account']['handle']) . '">@' . kv_e($soc['account']['handle']) . '</a> は、'
+           . (int)$soc['account']['since'] . '年から運用し、フォロワー' . number_format((int)$soc['account']['followers']) . '人。党首・大臣を含む国会議員' . (int)$c['giin'] . '人、首長' . (int)$c['shucho'] . '人、'
+           . 'フォロワー1万人を超えるインフルエンサー' . (int)$c['influencers'] . '人、企業' . (int)$c['companies'] . '社にフォローされています（' . kv_e(date('Y年n月', strtotime($soc['built']))) . '時点）。</p></div>';
+    }
+    echo '</div>';
+    if ($soc) {
+        $row = function (string $title, array $list, int $max, bool $round = true) {
+            $h = '<div class="sup-row"><h3>' . kv_e($title) . '</h3><div class="sup-avs">';
+            foreach (array_slice($list, 0, $max) as $x) {
+                $h .= '<a class="sup-av" href="' . kv_e($x['url'] ?: '#') . '"' . (strpos((string)$x['url'], 'exbridge.jp') === false ? ' rel="nofollow noopener" target="_blank"' : '') . '>'
+                    . '<img src="' . kv_e($x['avatar']) . '" alt="' . kv_e($x['name']) . '" width="56" height="56" loading="lazy" referrerpolicy="no-referrer"' . ($round ? '' : ' style="border-radius:12px"') . '>'
+                    . '<b>' . kv_e($x['name']) . '</b>' . (!empty($x['sub']) ? '<span>' . kv_e($x['sub']) . '</span>' : '') . '</a>';
+            }
+            return $h . '</div></div>';
+        };
+        echo '<div class="sup-social">'
+           . '<a class="sup-banner" href="' . kv_e($soc['portal']) . '#ref=exdirect-supplier"><img src="' . kv_e($soc['banner']) . '" width="1500" height="500" alt="@xb_bittensor のフォロワー企業を紹介する Kurage フォロワーポータル" loading="lazy"></a>'
+           . $row('@xb_bittensor をフォローしている国会議員（' . count($soc['giin']) . '人）', $soc['giin'], 30)
+           . $row('フォロワー1万人を超えるインフルエンサー（' . (int)$soc['counts']['influencers'] . '人のうち' . count($soc['influencers']) . '人）', $soc['influencers'], 16)
+           . $row('フォローしてくださった企業（' . count($soc['companies']) . '社）', $soc['companies'], 40, false)
+           . '<p class="src">敬称略。アカウントの公開情報をもとに当社が調べたものです。企業とインフルエンサーは「<a href="' . kv_e($soc['portal']) . '#ref=exdirect-supplier">Kurage フォロワーポータル</a>」で紹介しています。</p></div>';
+    }
+    echo '<p class="src">くわしくはブログ「<a href="https://exbridge.jp/vibeblog/2026-11-17-hanro-kakudai-maker-tonya-ai-x-direct.html#ref=exdirect-supplier">販路拡大をメーカー・問屋がAIで進める方法</a>」をご覧ください。'
        . '御社のXの運用も、<a href="https://exbridge.jp/ai-sns-komon.html#ref=exdirect-supplier">AI-SNS顧問</a>でお手伝いします。</p>';
 
     // モール・SaaS の EC は AI に対応していない（2026-11-17 ユーザー指示。ブログ記事と同じ主張）
@@ -1128,6 +1198,10 @@ function kv_page_supplier(): void
     echo '<h2>取り扱いまでの流れ</h2><div class="sup-flow">'
        . '<div>下のフォームからお問い合わせ</div><div>価格表・商品情報のご提供</div>'
        . '<div>X-Direct に掲載（数日）</div><div>ご注文が入ったら発注・直送</div></div>';
+
+    echo '<h2>商材の掲載についてよくある質問</h2><div class="faq">';
+    foreach ($faq as $x) { echo '<h3>' . kv_e($x[0]) . '</h3><p>' . kv_e($x[1]) . '</p>'; }
+    echo '</div>';
 
     if ($err !== '') { echo '<div class="alert">' . kv_e($err) . '</div>'; }
     $opt = function (string $v) use ($f) { return '<option' . ($f['pricelist'] === $v ? ' selected' : '') . '>' . kv_e($v) . '</option>'; };
