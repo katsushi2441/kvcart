@@ -2,6 +2,7 @@
 /**
  * Google Merchant Center の商品フィード（/google-shopping.xml・2026-11-17）
  *
+ * おちゃのこネット時代の Merchant Center は https://www.exdirect.net/gfeed.xml を取得していた。同じ URL でもこのフィードを出す（商品IDは同じ）。
  * Google ショッピング（無料リスティング・ショッピング タブ）に載せるため、Merchant Center にこの URL を
  * 「スケジュールされた取得」で登録する。形式は RSS 2.0 + g: 名前空間（Google の商品データ仕様）。
  *
@@ -29,6 +30,8 @@ function kv_gshop_build(string $path): array
 {
     $db = kv_db();
     $makers = []; foreach ($db->query('SELECT id,name FROM makers') as $m) { $makers[(int)$m['id']] = $m['name']; }
+    // Google の商品カテゴリ。おちゃのこネット時代のフィード（gfeed.xml）で商品ごとに付けていたものを引き継ぐ（kv_data/gshop_gpc.json: 商品ID => カテゴリ）
+    $gpc = is_file(KV_DATA . '/gshop_gpc.json') ? (json_decode((string)file_get_contents(KV_DATA . '/gshop_gpc.json'), true) ?: []) : [];
     $cats = []; foreach ($db->query('SELECT id,name,parent_name FROM categories') as $c) { $cats[(int)$c['id']] = trim(($c['parent_name'] ? $c['parent_name'] . ' > ' : '') . $c['name']); }
     $base = rtrim(defined('KV_ORIGIN') ? KV_ORIGIN : kv_site_url(''), '/');
     $tmp = $path . '.tmp';
@@ -61,6 +64,7 @@ function kv_gshop_build(string $path): array
               . ($jan !== '' ? '<g:gtin>' . $jan . '</g:gtin>' : '')
               . ($mdl !== '' ? '<g:mpn>' . $x($mdl) . '</g:mpn>' : '')
               . ($jan === '' && ($mdl === '' || $mk === '') ? '<g:identifier_exists>no</g:identifier_exists>' : '')
+              . (!empty($gpc[(string)$p['id']]) ? '<g:google_product_category>' . $x($gpc[(string)$p['id']]) . '</g:google_product_category>' : '')
               . (isset($cats[(int)$p['category_id']]) ? '<g:product_type>' . $x(($mk !== '' ? '' : '') . $cats[(int)$p['category_id']]) . '</g:product_type>' : '')
               . '<g:shipping><g:country>JP</g:country><g:price>0 JPY</g:price></g:shipping>'
               . "</item>\n";

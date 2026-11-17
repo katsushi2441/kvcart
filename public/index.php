@@ -81,7 +81,8 @@ function kv_route(string $path, int $page): void
         case '/thanks':        header('Location: ' . kv_url('cart')); return;
         case '/contact':  kv_page_contact(); return;
         case '/restock':  kv_page_restock(); return;   // 再入荷お知らせの登録（kv_stock.php）
-        case '/google-shopping.xml': kv_page_gshop_feed(); return;   // Google Merchant Center の商品フィード（kv_feed.php）
+        case '/google-shopping.xml':   // Google Merchant Center の商品フィード（kv_feed.php）
+        case '/gfeed.xml':   kv_page_gshop_feed(); return;   // gfeed.xml はおちゃのこネット時代に Merchant Center へ登録していたURL（11/16 の切り替えで404 になり Google ショッピングから消えた）
         case '/info':
         case '/help':
         case '/terms':
