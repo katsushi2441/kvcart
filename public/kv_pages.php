@@ -1084,7 +1084,7 @@ function kv_page_supplier(): void
        . '<div><h3>国会議員22人がフォローするX公式アカウント</h3><p>当社のX公式アカウント <a href="https://x.com/xb_bittensor">@xb_bittensor</a> は、フォロワー4,000人超。党首・総務大臣を含む国会議員22人、首長、フォロワー1万人を超えるインフルエンサー48人にフォローされています（2026年11月時点）。</p></div>'
        . '</div>'
        . '<p class="src">フォローしてくださった企業・インフルエンサー・国会議員は「<a href="https://exbridge.jp/kfollowers/#ref=exdirect-supplier">Kurage フォロワーポータル</a>」で紹介しています。'
-       . 'くわしくはブログ「<a href="https://exbridge.jp/vibeblog/2026-11-17-x-koushiki-account-xb-bittensor-kokkai-giin.html#ref=exdirect-supplier">X公式アカウント @xb_bittensor を国会議員22人がフォロー</a>」をご覧ください。'
+       . 'くわしくはブログ「<a href="https://exbridge.jp/vibeblog/2026-11-17-hanro-kakudai-maker-tonya-ai-x-direct.html#ref=exdirect-supplier">販路拡大をメーカー・問屋がAIで進める方法</a>」をご覧ください。'
        . '御社のXの運用も、<a href="https://exbridge.jp/ai-sns-komon.html#ref=exdirect-supplier">AI-SNS顧問</a>でお手伝いします。</p>';
 
     // モール・SaaS の EC は AI に対応していない（2026-11-17 ユーザー指示。ブログ記事と同じ主張）
