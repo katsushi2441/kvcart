@@ -61,6 +61,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", required=True)
     ap.add_argument("makers", nargs="+", help="メーカー名=slug")
+    ap.add_argument("--existing", action="store_true", help="登録済みのメーカーにも、まだ無い商品だけを足す（メーカーは作り直さない）")
     ap.add_argument("--only", help="移す商品だけを並べた JSON（[{id, price, list_price}]）。価格はこの値で入れる")
     a = ap.parse_args()
     only = None
@@ -86,6 +87,9 @@ def main():
         sys.exit(f"おちゃのこに見つからないメーカー: {missing}")
     for name, gid in gids.items():
         if cur.execute("SELECT 1 FROM makers WHERE id=?", (gid,)).fetchone():
+            if a.existing:
+                print(f"{name}（{gid}）は登録済み。まだ無い商品だけ足す")
+                continue
             sys.exit(f"{name}（{gid}）はもう登録済み")
         sort = (cur.execute("SELECT COALESCE(MAX(sort),0) FROM makers").fetchone()[0] or 0) + 1
         cur.execute("INSERT INTO makers (id,slug,name,sort) VALUES (?,?,?,?)", (gid, want[name], name, sort))
