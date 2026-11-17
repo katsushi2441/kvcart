@@ -6,7 +6,19 @@ declare(strict_types=1);
 function kv_session(): void
 {
     if (session_status() !== PHP_SESSION_ACTIVE) {
-        session_set_cookie_params(['lifetime' => 0, 'path' => (defined('KV_BASE') && KV_BASE !== '') ? KV_BASE : '/',
+        // ログイン（管理画面）とカートを長く保つ（2026-11-17 ユーザー指示「ログインの有効期限長くして」）。
+        // 既定 365日。kv_config.php で KV_SESSION_DAYS を決めれば変えられる（0 でブラウザを閉じるまで）。
+        // PHP の既定（操作が無いと約24分で消える・共有の保存先は他のアプリの掃除で消える）を避けるため、
+        // 保存先を kv_data/sessions（外から見えない）に分け、残す時間も同じ日数にする。
+        $days = defined('KV_SESSION_DAYS') ? (int)KV_SESSION_DAYS : 365;
+        $life = $days > 0 ? $days * 86400 : 0;
+        if ($life > 0) {
+            @ini_set('session.gc_maxlifetime', (string)$life);
+            $dir = (defined('KV_DATA') ? KV_DATA : __DIR__ . '/kv_data') . '/sessions';
+            if (!is_dir($dir)) { @mkdir($dir, 0700, true); }
+            if (is_dir($dir) && is_writable($dir)) { session_save_path($dir); }
+        }
+        session_set_cookie_params(['lifetime' => $life, 'path' => (defined('KV_BASE') && KV_BASE !== '') ? KV_BASE : '/',
                                    'httponly' => true, 'samesite' => 'Lax',
                                    'secure' => !empty($_SERVER['HTTPS'])]);
         session_start();
