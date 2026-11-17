@@ -26,7 +26,8 @@ require __DIR__ . '/kv_order.php';
 require __DIR__ . '/kv_stripe.php';
 require __DIR__ . '/kv_cart.php';
 require __DIR__ . '/kv_admin_catalog.php';
-require __DIR__ . '/kv_admin_ops.php';   // お問い合わせ受付一覧・ブラックリスト・帳票
+require __DIR__ . '/kv_admin_ops.php';
+require __DIR__ . '/kv_admin_stock.php';   // 在庫管理   // お問い合わせ受付一覧・ブラックリスト・帳票
 require __DIR__ . '/kv_pages.php';   // 運営マニュアルを管理画面の中で出すため
 
 kv_session();
@@ -39,6 +40,7 @@ if ($act === 'pcsv') { kv_admin_pcsv(); exit; }
 if ($act === 'ccsv') { kv_admin_ccsv(); exit; }
 if ($act === 'icsv') { kv_admin_icsv(); exit; }
 if ($act === 'doc')  { kv_admin_doc(); exit; }
+if ($act === 'slcsv') { kv_admin_slcsv(); exit; }
 
 switch ($act) {
     case 'order':  kv_admin_order(); break;
@@ -49,6 +51,10 @@ switch ($act) {
     case 'inquiries': kv_admin_inquiries(); break;
     case 'inquiry':   kv_admin_inquiry(); break;
     case 'blacklist': kv_admin_blacklist(); break;
+    case 'stock':     kv_admin_stock(); break;
+    case 'stocklog':  kv_admin_stocklog(); break;
+    case 'stockset':  kv_admin_stockset(); break;
+    case 'restock':   kv_admin_restock(); break;
     case 'manual':   kv_page_manual(); break;   // 管理画面の見た目で出る（KV_ADMIN）
     // 商品・メーカー・カテゴリ・顧客・売上（kv_admin_catalog.php・2026-11-17）
     case 'products':   kv_admin_products(); break;
@@ -117,6 +123,7 @@ function kv_admin_nav(string $now): void
         '受注管理' => ['orders' => '受注一覧と明細', 'new' => '代理入力', 'inquiries' => 'お問い合わせ受付一覧', 'customers' => '顧客', 'stats' => '売上'],
         '商品管理' => ['products' => '商品', 'price' => '価格の一括改定', 'pimport' => '商品CSV取り込み', 'makers' => 'メーカー',
                        'categories' => 'カテゴリ', 'plog' => '商品の変更履歴'],
+        '在庫管理' => ['stock' => '在庫一括設定', 'stocklog' => '在庫数変更履歴', 'restock' => '再入荷お知らせ登録一覧', 'stockset' => '在庫表示・通知設定'],
         '設定' => ['mail' => 'メールテンプレート設定', 'blacklist' => 'ブラックリスト設定', 'manual' => '運営マニュアル'],
     ];
     echo '</div><nav class="admnav"><div class="inner">';
@@ -151,7 +158,10 @@ function kv_admin_orders(): void
             if (isset(KV_FLAGS[$op])) { kv_order_flag($id, $op, true, false); }
             elseif ($op === 'hide')   { kv_db()->prepare('UPDATE orders SET hidden=1 WHERE id=?')->execute([$id]); kv_log($id, 'hide', '非表示にしました'); }
             elseif ($op === 'unhide') { kv_db()->prepare('UPDATE orders SET hidden=0 WHERE id=?')->execute([$id]); kv_log($id, 'hide', '取り出しました'); }
-            elseif ($op === 'cancel') { kv_db()->prepare('UPDATE orders SET cancelled=1 WHERE id=?')->execute([$id]); kv_log($id, 'cancel', 'キャンセルしました'); }
+            elseif ($op === 'cancel' && !(int)(kv_order($id)['cancelled'] ?? 1)) {
+                kv_db()->prepare('UPDATE orders SET cancelled=1 WHERE id=?')->execute([$id]); kv_log($id, 'cancel', 'キャンセルしました');
+                kv_stock_apply_order($id, +1, '受注キャンセル');
+            }
         }
         header('Location: ' . $back . '&done=' . count($ids)); exit;
     }
@@ -380,6 +390,9 @@ function kv_admin_order(): void
         } elseif (isset($_POST['cancel'])) {
             kv_db()->prepare('UPDATE orders SET cancelled=? WHERE id=?')
                    ->execute([(string)$_POST['cancel'] === '1' ? 1 : 0, $id]);
+            // 在庫を戻す／取り消しなら減らし直す（kv_stock.php）
+            if ((string)$_POST['cancel'] === '1' && !(int)$o['cancelled']) { kv_stock_apply_order($id, +1, '受注キャンセル'); }
+            if ((string)$_POST['cancel'] !== '1' && (int)$o['cancelled']) { kv_stock_apply_order($id, -1, '受注キャンセルの取り消し'); }
             kv_log($id, 'cancel', (string)$_POST['cancel'] === '1' ? 'キャンセルしました' : 'キャンセルを取り消しました');
         } elseif (isset($_POST['sendmail'])) {
             kv_mail_send($id, (string)$_POST['sendmail']);

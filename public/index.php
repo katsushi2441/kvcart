@@ -79,6 +79,7 @@ function kv_route(string $path, int $page): void
         case '/checkout':
         case '/thanks':        header('Location: ' . kv_url('cart')); return;
         case '/contact':  kv_page_contact(); return;
+        case '/restock':  kv_page_restock(); return;   // 再入荷お知らせの登録（kv_stock.php）
         case '/info':
         case '/help':
         case '/terms':
@@ -494,8 +495,7 @@ function kv_page_product(int $id): void
                 'shippingDestination' => ['@type' => 'DefinedRegion', 'addressCountry' => 'JP',
                     'addressRegion' => array_map(fn($n) => sprintf('%02d', $n), range(2, 46))],
             ] : null,
-            'availability' => (int)$p['stock_unlimited'] === 1 || (int)$p['stock'] > 0
-                ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+            'availability' => kv_stock_schema_availability($p),   // 在庫数・在庫切れの扱いから（kv_stock.php）
         ],
     ];
     if (isset($jsonld['offers']) && is_array($jsonld['offers'])) { $jsonld['offers'] = array_filter($jsonld['offers'], fn($v) => $v !== null); }
@@ -559,9 +559,20 @@ function kv_page_product(int $id): void
     if (kv_is_xdirect() && $incl !== null) {
         echo '<p class="src" style="color:#8a5a00">モールの出品手数料・ネットショップサービスの利用料がかからない分、お安くしています。</p>';
     }
-    $in = ((int)$p['stock_unlimited'] === 1) || ((int)$p['stock'] > 0);
-    echo '<p class="src">' . ($in ? '在庫あり／お取り寄せ' : '在庫を確認します') . '</p>';
-    if ($incl !== null && kv_inquiry_only($p)) {
+    if (($sl = kv_stock_label($p)) !== '') {
+        echo '<p class="src"' . (kv_stock_state($p) === 'low' ? ' style="color:#b45309;font-weight:700"' : '') . '>' . kv_e($sl) . '</p>';
+    }
+    if ($incl !== null && !kv_inquiry_only($p) && !kv_stock_orderable($p)) {
+        // 在庫切れで注文を受け付けない設定のとき。カートの代わりに再入荷お知らせ（おちゃのこネットと同じ）
+        echo '<div class="note"><b>' . kv_e(kv_stock_settings()['text_soldout']) . '</b></div>';
+        if (kv_restock_enabled($p)) {
+            echo !empty($_GET['restock']) ? '<div class="note">再入荷お知らせに登録しました。入荷したらメールでお知らせします。</div>'
+               : '<form method="post" action="' . kv_url('restock') . '" class="panel"><b>再入荷お知らせ</b><p class="src">' . kv_e(kv_stock_settings()['restock_note']) . '</p>'
+                 . '<input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '"><input type="hidden" name="pid" value="' . (int)$p['id'] . '">' . kv_form_guard_issue('restock')
+                 . '<input type="email" name="email" required placeholder="メールアドレス" style="padding:8px;border:2px solid #cfdae4;border-radius:8px;max-width:280px;width:100%"> '
+                 . '<button class="btn" type="submit">登録する</button></form>';
+        }
+    } elseif ($incl !== null && kv_inquiry_only($p)) {
         // 問い合わせ扱い（メーカーで販売中止など）。価格は出し、カートの代わりにお問い合わせ（2026-11-16）
         echo '<div class="note">メーカーでの販売が終了した商品です。在庫の有無・後継の機種は、お問い合わせください。</div>'
            . '<p><a class="btn" href="' . kv_url('contact') . '?pid=' . (int)$p['id'] . '">この商品について問い合わせる</a></p>';
@@ -812,4 +823,15 @@ function kv_llms(): void
        . "- 注文後に在庫・納期・送料を確認してご連絡します。\n"
        . "- お支払いは銀行振込（前払い。在庫・納期の確認後に振込先をご案内）と、クレジットカード（ご注文時のお支払い画面から）。\n"
        . "- 価格は税込表示。商品ページの価格が最新です。\n";
+}
+
+/** 再入荷お知らせの登録（商品ページのフォームから）。スパム対策はお問い合わせと同じ（kv_form_guard_check）。 */
+function kv_page_restock(): void
+{
+    $pid = (int)($_POST['pid'] ?? 0);
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pid && kv_csrf_ok()) {
+        [$quiet, $spam, $err] = kv_form_guard_check('restock', '', '再入荷');
+        if (!$quiet && $err === '') { kv_restock_register($pid, (string)($_POST['email'] ?? '')); }
+    }
+    header('Location: ' . kv_url('product/' . $pid) . '?restock=1');
 }

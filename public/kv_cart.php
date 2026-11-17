@@ -123,6 +123,10 @@ function kv_page_cart(): void
                 header('Location: ' . kv_url('product/' . $pid));
                 return;
             }
+            if ($p && !kv_stock_orderable($p)) {   // 在庫切れで注文を受け付けない設定（kv_stock.php）
+                header('Location: ' . kv_url('product/' . $pid));
+                return;
+            }
             if ($p && kv_variation_pick($p, $idx) === null) {
                 // オプションを選ばずに送られた（または品切れの組み合わせ）。商品ページへ戻す
                 header('Location: ' . kv_url('product/' . $pid) . '?need_option=1');
@@ -130,6 +134,7 @@ function kv_page_cart(): void
             }
             $key = $idx ? $pid . '|' . implode('-', $idx) : (string)$pid;
             $c[$key] = min(99, (int)($c[$key] ?? 0) + max(1, (int)($_POST['qty'] ?? 1)));
+            if ($p && kv_stock_tracked($p) && !(int)kv_stock_settings()['backorder']) { $c[$key] = min($c[$key], max(1, (int)$p['stock'])); }
         }
         if (isset($_POST['qty_of']) && is_array($_POST['qty_of'])) {
             foreach ($_POST['qty_of'] as $key => $q) {

@@ -81,6 +81,9 @@ function kv_pupdate(int $id, array $vals, string $how): void
     kv_db()->prepare("UPDATE products SET $set WHERE id=?")->execute(array_merge(array_values($vals), [$id]));
     unset($vals['updated_at']);
     kv_plog($id, $cur, $vals, $how);
+    if (array_key_exists('stock', $vals) && $cur && (string)$cur['stock'] !== (string)$vals['stock']) {
+        kv_stock_log($id, $cur['stock'] === null ? null : (int)$cur['stock'], $vals['stock'] === null ? null : (int)$vals['stock'], $how);
+    }
 }
 
 function kv_new_product_id(): int
