@@ -284,12 +284,29 @@ function kv_maker_name_exists(string $name): bool
  * 店のアドレスで認証して SMTP で送る（SPF・DKIM が通り、Gmail で迷惑メールにされにくい）。
  * 無ければレンタルサーバーの mail() で送る。
  */
-function kv_mail(string $to, string $subject, string $body, string $headers = '', string $cc = ''): bool
+function kv_mail(string $to, string $subject, string $body, string $headers = '', string $cc = '', array $attach = []): bool
 {
     $cc = trim(str_replace(["\r", "\n"], '', $cc));
     if ($cc !== '') { $headers = rtrim($headers) . "\r\nCc: " . $cc . "\r\n"; }
+    // 添付（納品書・請求書・領収書の PDF など・2026-11-17）。[ファイル名 => 中身] を multipart/mixed で送る
+    $raw = null;
+    if ($attach) {
+        $bd = 'kv' . bin2hex(random_bytes(8));
+        $headers = preg_replace('/^Content-Type:[^\r\n]*(\r?\n)?/mi', '', $headers);
+        $headers = rtrim($headers) . "\r\nContent-Type: multipart/mixed; boundary=\"$bd\"\r\n";
+        $raw = "--$bd\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n"
+             . chunk_split(base64_encode($body), 76, "\r\n");
+        foreach ($attach as $fn => $data) {
+            $enc = '=?UTF-8?B?' . base64_encode((string)$fn) . '?=';
+            $type = substr(strtolower((string)$fn), -4) === '.pdf' ? 'application/pdf' : 'application/octet-stream';
+            $raw .= "--$bd\r\nContent-Type: $type; name=\"$enc\"\r\nContent-Transfer-Encoding: base64\r\n"
+                  . "Content-Disposition: attachment; filename=\"$enc\"\r\n\r\n" . chunk_split(base64_encode((string)$data), 76, "\r\n");
+        }
+        $raw .= "--$bd--\r\n";
+    }
     if (!defined('KV_SMTP') || !is_array(KV_SMTP) || empty(KV_SMTP['host'])) {
-        return @mail($to, $subject, $body, $headers);
+        return $raw === null ? @mail($to, $subject, $body, $headers)
+                             : @mail($to, $subject, $raw, rtrim($headers) . "\r\nMIME-Version: 1.0\r\n");
     }
     $c = KV_SMTP;
     $from = $c['user'];
@@ -330,8 +347,8 @@ function kv_mail(string $to, string $subject, string $body, string $headers = ''
              . 'Message-ID: <' . bin2hex(random_bytes(12)) . '@' . $dom . ">\r\n"
              . 'MIME-Version: 1.0' . "\r\n"
              . rtrim(str_replace(["\r\n", "\n"], "\r\n", $headers)) . "\r\n"
-             . 'Content-Transfer-Encoding: base64' . "\r\n\r\n"
-             . chunk_split(base64_encode($body), 76, "\r\n");
+             . ($raw === null ? 'Content-Transfer-Encoding: base64' . "\r\n\r\n" . chunk_split(base64_encode($body), 76, "\r\n")
+                              : "\r\n" . $raw);
         fwrite($fp, $msg . ".\r\n");
         $ok = in_array((int)substr($read(), 0, 3), [250], true);
     }

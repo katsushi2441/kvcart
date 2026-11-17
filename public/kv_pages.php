@@ -880,7 +880,13 @@ function kv_page_contact(): void
             $h = 'From: ' . mb_encode_mimeheader(kv_shop('name')) . ' <' . $to . '>' . "\r\n"
                . 'Reply-To: ' . $reply . "\r\n"
                . 'Content-Type: text/plain; charset=UTF-8' . "\r\n";
-            $sent = kv_mail($to, mb_encode_mimeheader('【お問い合わせ】' . $in['name'] . ' 様'), $body, $h);
+            // 管理画面の「お問い合わせ受付一覧」に残す（2026-11-17）。ブラックリストに当たれば店へのメールにも書く
+            $iid = function_exists('kv_inquiry_save') ? kv_inquiry_save($in, $pid ?: (int)($_POST['pid'] ?? 0)) : 0;
+            $bl = $iid ? (string)kv_db()->query('SELECT bl_note FROM inquiries WHERE id=' . $iid)->fetchColumn() : '';
+            if ($bl !== '') { $body = "【ブラックリストに一致】" . $bl . "\n" . $body; }
+            if ($iid) { $body .= "\n------------------------------------\n管理画面で返信: " . kv_site_url('admin.php?a=inquiry&id=' . $iid) . "\n"; }
+            $sent = kv_mail($to, mb_encode_mimeheader('[' . kv_shop('name') . '] 【お問い合わせ】' . $in['name'] . ' 様'), $body, $h);
+            if (!$sent && $iid) { $sent = true; }   // メールが送れなくても受付は保存できている
             if (!$sent) {
                 $err = '送信できませんでした。お手数ですが ' . $to . ' 宛にメールでご連絡ください。';
             }

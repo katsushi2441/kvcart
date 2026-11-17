@@ -26,15 +26,19 @@ require __DIR__ . '/kv_order.php';
 require __DIR__ . '/kv_stripe.php';
 require __DIR__ . '/kv_cart.php';
 require __DIR__ . '/kv_admin_catalog.php';
+require __DIR__ . '/kv_admin_ops.php';   // お問い合わせ受付一覧・ブラックリスト・帳票
 require __DIR__ . '/kv_pages.php';   // 運営マニュアルを管理画面の中で出すため
 
 kv_session();
 kv_admin_guard();
+kv_ops_schema();   // ブラックリスト・お問い合わせの表と、受注の ip・bl_note 列を用意する
 
 $act = (string)($_GET['a'] ?? 'orders');
 if ($act === 'csv') { kv_admin_csv(); exit; }
 if ($act === 'pcsv') { kv_admin_pcsv(); exit; }
 if ($act === 'ccsv') { kv_admin_ccsv(); exit; }
+if ($act === 'icsv') { kv_admin_icsv(); exit; }
+if ($act === 'doc')  { kv_admin_doc(); exit; }
 
 switch ($act) {
     case 'order':  kv_admin_order(); break;
@@ -42,6 +46,9 @@ switch ($act) {
     case 'mail':   kv_admin_mail_templates(); break;
     case 'compose': kv_admin_compose(); break;
     case 'bcompose': kv_admin_bcompose(); break;
+    case 'inquiries': kv_admin_inquiries(); break;
+    case 'inquiry':   kv_admin_inquiry(); break;
+    case 'blacklist': kv_admin_blacklist(); break;
     case 'manual':   kv_page_manual(); break;   // 管理画面の見た目で出る（KV_ADMIN）
     // 商品・メーカー・カテゴリ・顧客・売上（kv_admin_catalog.php・2026-11-17）
     case 'products':   kv_admin_products(); break;
@@ -107,10 +114,10 @@ function kv_admin_nav(string $now): void
 {
     // おちゃのこネットの管理画面と同じく、仕事ごとにまとめる（受注管理・商品管理・設定）
     $groups = [
-        '受注管理' => ['orders' => '受注一覧と明細', 'new' => '代理入力', 'customers' => '顧客', 'stats' => '売上'],
+        '受注管理' => ['orders' => '受注一覧と明細', 'new' => '代理入力', 'inquiries' => 'お問い合わせ受付一覧', 'customers' => '顧客', 'stats' => '売上'],
         '商品管理' => ['products' => '商品', 'price' => '価格の一括改定', 'pimport' => '商品CSV取り込み', 'makers' => 'メーカー',
                        'categories' => 'カテゴリ', 'plog' => '商品の変更履歴'],
-        '設定' => ['mail' => 'メールテンプレート設定', 'manual' => '運営マニュアル'],
+        '設定' => ['mail' => 'メールテンプレート設定', 'blacklist' => 'ブラックリスト設定', 'manual' => '運営マニュアル'],
     ];
     echo '</div><nav class="admnav"><div class="inner">';
     foreach ($groups as $g => $items) {
@@ -229,6 +236,7 @@ function kv_admin_orders(): void
            . '<td rowspan="2" class="src" style="white-space:nowrap">' . kv_e(substr((string)$o['created_at'], 5, 11)) . '</td>'
            . '<td rowspan="2"><a href="?a=order&id=' . $id . '">' . kv_e($o['code']) . '</a>' . ((int)$o['cancelled'] === 1 ? '<div class="src" style="color:#b3261e">キャンセル</div>' : '') . '</td>'
            . '<td rowspan="2">' . ($n >= 2 ? '<span class="tag" style="background:#e9f7ef;color:#14632f" title="購入回数">' . $n . '回</span> ' : '')
+           . (!empty($o['bl_note']) ? '<span class="tag red" title="' . kv_e($o['bl_note']) . '">ブラックリスト</span> ' : '')
            . '<a href="?a=order&id=' . $id . '">' . kv_e($o['name']) . '</a>' . ($o['company'] ? '<div class="src">' . kv_e($o['company']) . '</div>' : '') . '</td>'
            . '<td rowspan="2" style="text-align:right;white-space:nowrap">' . number_format((int)$o['total']) . '円</td>'
            . '<td rowspan="2" class="src">' . ($o['payment'] === 'stripe' ? 'カード' : '振込') . '</td>'
@@ -393,6 +401,10 @@ function kv_admin_order(): void
         echo $_GET['mailed'] === '1' ? '<div class="note">メールを送りました。下の「送ったメール」に全文が残っています。</div>'
                                      : '<div class="alert">メールを送れませんでした。メールの設定（kv_config.php の KV_SMTP）を確かめてください。</div>';
     }
+    if (!empty($o['bl_note'])) { echo '<div class="alert"><b>ブラックリストに一致：</b>' . kv_e($o['bl_note']) . '</div>'; }
+    echo '<p class="src">IP ' . kv_e($o['ip'] ?? '') . '　<a href="?a=blacklist&email=' . rawurlencode((string)$o['email']) . '&name=' . rawurlencode((string)$o['name'])
+       . '&tel=' . rawurlencode((string)$o['tel']) . '&ip=' . rawurlencode((string)($o['ip'] ?? '')) . '">この購入者をブラックリストに登録</a></p>';
+    echo kv_admin_doc_panel($o);
     if ((int)$o['cancelled'] === 1) { echo '<div class="alert">この受注はキャンセルされています。</div>'; }
 
     // 4系統チェック
@@ -590,7 +602,11 @@ function kv_admin_compose(): void
         elseif ($subj === '' || trim($body) === '') { $err = '件名と本文を入れてください。'; }
         elseif (strpos($body, '〇') !== false && empty($_POST['force'])) { $err = '本文に「〇」が残っています（納期などの書き換え忘れ）。直すか、このまま送るなら「〇のまま送る」にチェックしてください。'; }
         elseif (($_POST['step'] ?? '') === 'send') {
-            $ok = kv_mail_send_text($id, $to, $cc, $subj, $body, $kind);
+            $att = [];
+            foreach (array_intersect((array)($_POST['doc'] ?? []), array_keys(KV_DOC_TYPES)) as $t) {
+                $att[kv_doc_filename($id, $t)] = kv_doc_pdf($id, $t, ['atena' => $_POST['r_atena'] ?? '', 'tadashi' => $_POST['r_tadashi'] ?? '']);
+            }
+            $ok = kv_mail_send_text($id, $to, $cc, $subj, $body, $kind, $att);
             if ($ok && isset(KV_FLAGS[$done]) && (int)$o['f_' . $done] !== 1) { kv_order_flag($id, $done, true, false); }
             header('Location: ' . $back . (strpos($back, '?') !== false ? '&' : '?') . 'mailed=' . ($ok ? '1' : '0'));
             exit;
@@ -615,7 +631,11 @@ function kv_admin_compose(): void
            . '<tr><th>送ったあと</th><td>' . (isset(KV_FLAGS[$done]) ? kv_e(KV_FLAGS[$done]) . 'を完了にする' : '処理状況は変えない') . '</td></tr></table>'
            . '<pre style="white-space:pre-wrap;font-size:13px;background:#f7f9fb;border:1px solid #e3e9ee;border-radius:8px;padding:10px">' . kv_e($body) . '</pre>'
            . '<form method="post" action="?a=compose">' . $hidden;
-        foreach (['to' => $to, 'cc' => $cc, 'subject' => $subj, 'body' => $body, 'done' => $done, 'force' => $_POST['force'] ?? ''] as $k => $v) { echo '<input type="hidden" name="' . $k . '" value="' . kv_e($v) . '">'; }
+        foreach (['to' => $to, 'cc' => $cc, 'subject' => $subj, 'body' => $body, 'done' => $done, 'force' => $_POST['force'] ?? '',
+                  'r_atena' => $_POST['r_atena'] ?? '', 'r_tadashi' => $_POST['r_tadashi'] ?? ''] as $k => $v) { echo '<input type="hidden" name="' . $k . '" value="' . kv_e($v) . '">'; }
+        foreach (array_intersect((array)($_POST['doc'] ?? []), array_keys(KV_DOC_TYPES)) as $t) { echo '<input type="hidden" name="doc[]" value="' . $t . '">'; }
+        $docs = array_map(fn($t) => KV_DOC_TYPES[$t], array_intersect((array)($_POST['doc'] ?? []), array_keys(KV_DOC_TYPES)));
+        if ($docs) { echo '<p class="src">添付：' . kv_e(implode('・', $docs)) . '（PDF）</p>'; }
         echo '<button class="btn" name="step" value="send">送信する</button> <button class="btn gray" name="step" value="edit">戻って直す</button></form></div></div>';
         kv_footer(); return;
     }
@@ -629,6 +649,9 @@ function kv_admin_compose(): void
        . '<label class="src" style="display:block;margin-top:8px">Cc（店の控え。要らなければ空に）</label><input name="cc" value="' . kv_e($cc) . '" style="' . $in . '">'
        . '<label class="src" style="display:block;margin-top:8px">件名（先頭に [' . kv_e(kv_shop('name')) . '] が自動で付きます）</label><input name="subject" value="' . kv_e($subj) . '" style="' . $in . '">'
        . '<label class="src" style="display:block;margin-top:8px">本文</label><textarea name="body" rows="24" style="' . $in . ';font-family:ui-monospace,monospace;font-size:13px">' . kv_e($body) . '</textarea>'
+       . '<p>添付（PDF）：' . implode(' ', array_map(fn($t) => '<label><input type="checkbox" name="doc[]" value="' . $t . '"' . (in_array($t, (array)($_POST['doc'] ?? []), true) ? ' checked' : '') . '> ' . KV_DOC_TYPES[$t] . '</label>', array_keys(KV_DOC_TYPES)))
+       . '　<span class="src">領収書の宛名</span> <input name="r_atena" value="' . kv_e($_POST['r_atena'] ?? ($o['company'] ?: $o['name'])) . '" style="padding:5px;border:2px solid #cfdae4;border-radius:8px;width:180px">'
+       . ' <span class="src">但し</span> <input name="r_tadashi" value="' . kv_e($_POST['r_tadashi'] ?? '商品代として') . '" style="padding:5px;border:2px solid #cfdae4;border-radius:8px;width:140px"></p>'
        . '<p>状態（メールマネジメント）：<select name="done" style="padding:6px;border:2px solid #cfdae4;border-radius:8px"><option value="">変えない</option>';
     foreach (KV_FLAGS as $k => $lb) { echo '<option value="' . $k . '"' . ($k === $done ? ' selected' : '') . '>' . $lb . '完了にする</option>'; }
     echo '</select>' . ($err && strpos($err, '〇') !== false ? ' <label class="src"><input type="checkbox" name="force" value="1"> 〇のまま送る</label>' : '') . '</p>'

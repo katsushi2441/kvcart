@@ -116,6 +116,8 @@ function kv_order_create(array $cart, array $post): int
     }
     kv_log($oid, 'created', '注文を受け付けました');
     $db->commit();
+    // IP の記録とブラックリストの照合（kv_ops.php）。一致しても注文は止めず、店への通知と受注一覧に印を出す
+    if (PHP_SAPI !== 'cli' && empty($post['_admin_entry'])) { kv_order_after_create($oid); }
     // カード払いは、決済が終わってから受付メールを送る（2026-11-17 ユーザー指示「カード決済してから注文受付の自動メール」）。
     // 決済の完了は Stripe の通知（kv_stripe_handle の checkout.session.completed）で受け、order_paid_card を送る
     $o = kv_order($oid);
@@ -305,14 +307,15 @@ function kv_mail_default_labels(): array
 }
 
 /** 管理画面で書いたメールを、そのままの件名・本文で送る（Cc 可）。送った全文を order_mails に残す。 */
-function kv_mail_send_text(int $oid, string $to, string $cc, string $subj, string $body, string $kind = 'other'): bool
+function kv_mail_send_text(int $oid, string $to, string $cc, string $subj, string $body, string $kind = 'other', array $attach = []): bool
 {
     kv_order_schema();
     $subj = kv_mail_subject($subj);
     $from = kv_shop('email');
     $h = "From: " . mb_encode_mimeheader(kv_shop('name')) . " <$from>\r\n"
        . "Reply-To: $from\r\nContent-Type: text/plain; charset=UTF-8\r\n";
-    $ok = kv_mail($to, mb_encode_mimeheader($subj), $body, $h, $cc);
+    $ok = kv_mail($to, mb_encode_mimeheader($subj), $body, $h, $cc, $attach);
+    if ($attach) { $body .= "\n\n（添付: " . implode('、', array_keys($attach)) . "）"; }
     kv_db()->prepare('INSERT INTO order_mails (order_id,at,to_addr,cc,subject,body,ok,kind) VALUES (?,?,?,?,?,?,?,?)')
            ->execute([$oid, date('Y-m-d H:i:s'), $to, $cc, $subj, $body, $ok ? 1 : 0, $kind]);
     kv_log($oid, 'mail', ($ok ? '送信' : '送信できず') . ': ' . $subj . ' → ' . $to . ($cc !== '' ? '（Cc ' . $cc . '）' : ''));
@@ -400,7 +403,8 @@ function kv_mail_send(int $oid, string $key): bool
            ->execute([$oid, date('Y-m-d H:i:s'), $o['email'], '', $subj, $body, $ok ? 1 : 0, kv_mail_kind($key)]);
     if (in_array($key, ['order_received', 'order_paid_card'], true) && $from !== '') {
         // 店にも同じ内容を送る（新しい注文に気づけるように）。カード払いは決済が終わってから
-        $note = ($key === 'order_paid_card' ? "新しい注文が入り、カードでのお支払いも確認しました。" : "新しい注文が入りました。")
+        $note = (!empty($o['bl_note']) ? "【ブラックリストに一致】" . $o['bl_note'] . "\n" : '')
+              . ($key === 'order_paid_card' ? "新しい注文が入り、カードでのお支払いも確認しました。" : "新しい注文が入りました。")
               . "お客様には下の内容でメールを送っています（送信: " . ($ok ? '成功' : '失敗') . "）。\n"
               . "お客様: " . $o['name'] . ' ' . ($o['company'] ?? '') . " / " . $o['email'] . " / " . ($o['tel'] ?? '') . "\n"
               . "発注用の社内型番: " . implode(' / ', array_map(static fn($it) => $it['model_number'] . ' ×' . (int)$it['qty'], kv_order_items($oid))) . "\n"
@@ -411,3 +415,5 @@ function kv_mail_send(int $oid, string $key): bool
     }
     return (bool)$ok;
 }
+
+require_once __DIR__ . '/kv_ops.php';   // ブラックリスト・お問い合わせ・帳票（2026-11-17）

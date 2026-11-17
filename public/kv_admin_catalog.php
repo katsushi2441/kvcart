@@ -494,12 +494,22 @@ function kv_admin_pimport(): void
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && kv_csrf_ok() && !empty($_POST['apply']) && is_file($tmp)) {
         $plan = json_decode((string)file_get_contents($tmp), true) ?: [];
         $db = kv_db(); $db->beginTransaction();
-        foreach ($plan as $id => $vals) { kv_pupdate((int)$id, $vals, 'CSVの取り込み'); }
+        foreach ($plan as $id => $vals) {
+            if (strpos((string)$id, 'new') === 0) {
+                $nid = kv_new_product_id(); $cols = array_keys($vals);
+                kv_db()->prepare('INSERT INTO products (id,' . implode(',', $cols) . ',updated_at,imported_at) VALUES (?,' . implode(',', array_fill(0, count($cols), '?')) . ',?,?)')
+                       ->execute(array_merge([$nid], array_values($vals), [date('c'), date('c')]));
+                kv_db()->prepare('DELETE FROM retired_products WHERE id=?')->execute([$nid]);
+                kv_plog($nid, [], $vals, 'CSVで新規登録');
+            } else {
+                kv_pupdate((int)$id, $vals, 'CSVの取り込み');
+            }
+        }
         $db->commit(); @unlink($tmp);
         header('Location: ?a=plog&done=' . count($plan));
         exit;
     }
-    $plan = []; $skipped = [];
+    $plan = []; $skipped = []; $newerr = [];
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && kv_csrf_ok() && !empty($_FILES['csv']['tmp_name']) && is_uploaded_file($_FILES['csv']['tmp_name'])) {
         $raw = (string)file_get_contents($_FILES['csv']['tmp_name']);
         if (!mb_check_encoding($raw, 'UTF-8')) { $raw = mb_convert_encoding($raw, 'UTF-8', 'SJIS-win'); }
@@ -513,6 +523,27 @@ function kv_admin_pimport(): void
                 if (count($row) < count($head)) { $row = array_pad($row, count($head), ''); }
                 $r = array_combine($head, array_slice($row, 0, count($head)));
                 $id = (int)$r['id']; $cur = $id ? kv_aproduct($id) : null;
+                if (!$cur && in_array(strtolower(trim((string)$r['id'])), ['', 'new', '新規'], true)) {
+                    // 商品CSV一括登録（2026-11-17）: id を空か new にした行は新しい商品として登録する
+                    $nv = [];
+                    foreach (array_merge($editable, ['description']) as $c) {
+                        if (!array_key_exists($c, $r)) { continue; }
+                        $v = trim((string)$r[$c]);
+                        if (in_array($c, ['price', 'list_price', 'stock', 'maker_id', 'category_id'], true)) { $v = $v === '' ? null : (int)preg_replace('/[^\d-]/', '', $v); }
+                        if (in_array($c, ['price_unspecified', 'stock_unlimited', 'hidden', 'tax_reduce'], true)) { $v = (int)$v ? 1 : 0; }
+                        $nv[$c] = $v;
+                    }
+                    if (!empty($r['maker']) && empty($nv['maker_id'])) {
+                        $ms = kv_db()->prepare('SELECT id FROM makers WHERE name=? OR slug=?'); $ms->execute([trim($r['maker']), trim($r['maker'])]);
+                        $nv['maker_id'] = $ms->fetchColumn() ?: null;
+                        if (!$nv['maker_id']) { $newerr[] = ($r['name'] ?? '') . '：メーカー「' . $r['maker'] . '」が見つかりません（先にメーカー画面で追加）'; continue; }
+                    }
+                    if (trim((string)($nv['name'] ?? '')) === '') { $newerr[] = '商品名（name）が空の行があります'; continue; }
+                    if (empty($nv['price_unspecified']) && (int)($nv['price'] ?? 0) <= 0) { $newerr[] = $nv['name'] . '：販売価格（price）がありません'; continue; }
+                    $nv += ['stock_unlimited' => 1, 'hidden' => 0, 'price_unspecified' => 0, 'tax_reduce' => 0, 'stock' => 0];
+                    $plan['new' . count($plan)] = $nv;
+                    continue;
+                }
                 if (!$cur) { $skipped[] = $r['id']; continue; }
                 $ch = [];
                 foreach ($editable as $c) {
@@ -529,18 +560,28 @@ function kv_admin_pimport(): void
     }
     kv_admin_page('商品CSVの取り込み', 'pimport');
     echo '<p class="src">商品一覧の「この条件でCSV」で書き出したファイルを Excel などで直して、ここから戻します。id で商品を突き合わせ、<b>変わった項目だけ</b>を確認してから反映します。'
-       . '列は ' . kv_e(implode(', ', KV_PCSV_COLS)) . '（要らない列は消してかまいません。id は必須）。新しい商品の追加は商品画面からどうぞ。</p>'
+       . '列は ' . kv_e(implode(', ', KV_PCSV_COLS)) . '（要らない列は消してかまいません。id の列は必須）。</p>'
+       . '<p class="src"><b>新しい商品の一括登録</b>：id を空か「new」にした行は、新しい商品として登録します（name と price は必須。メーカーは maker_id か、メーカー名を入れた maker 列。説明は description 列）。'
+       . '<a href="?a=pcsv&q=__template__">ひな形のCSV</a></p>'
        . '<form method="post" enctype="multipart/form-data" class="panel"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
        . '<input type="file" name="csv" accept=".csv,text/csv"> <button class="btn" type="submit">確認する</button></form>';
     if ($msg) { echo '<div class="alert">' . kv_e($msg) . '</div>'; }
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$msg && empty($_POST['apply'])) {
         if ($skipped) { echo '<div class="alert">見つからない id が ' . count($skipped) . '件ありました（取り込みません）：' . kv_e(implode(', ', array_slice($skipped, 0, 20))) . '</div>'; }
+        if ($newerr) { echo '<div class="alert">新規登録できない行があります（取り込みません）：<br>' . implode('<br>', array_map('kv_e', array_slice($newerr, 0, 30))) . '</div>'; }
         if (!$plan) { echo '<div class="note">変わる所はありませんでした。</div>'; }
         else {
             $names = kv_pfields();
             echo '<form method="post"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '"><p><b>' . count($plan) . '件</b>の商品が変わります。'
                . '　<button class="btn" name="apply" value="1" type="submit">反映する</button></p><div class="scroll"><table class="t"><tr><th>ID</th><th>変わる項目</th></tr>';
+            $newn = count(array_filter(array_keys($plan), fn($k) => strpos((string)$k, 'new') === 0));
+            if ($newn) { echo '<tr><td colspan="2"><b>新規登録 ' . $newn . '件</b>（id が空か new の行）</td></tr>'; }
             foreach (array_slice($plan, 0, 300, true) as $id => $ch) {
+                if (strpos((string)$id, 'new') === 0) {
+                    echo '<tr><td><span class="tag gr">新規</span></td><td style="font-size:13px"><b>' . kv_e($ch['name']) . '</b>　' . (isset($ch['price']) ? number_format((int)$ch['price']) . '円' : '') . '　'
+                       . kv_e(implode(' / ', array_map(fn($k, $v) => $k . '=' . mb_strimwidth((string)$v, 0, 30, '…'), array_keys($ch), $ch))) . '</td></tr>';
+                    continue;
+                }
                 $cur = kv_aproduct((int)$id);
                 echo '<tr><td><a href="?a=product&id=' . (int)$id . '">' . (int)$id . '</a></td><td style="font-size:13px">';
                 foreach ($ch as $k => $v) { echo kv_e($names[$k] ?? $k) . '：' . kv_e((string)$cur[$k]) . ' → <b>' . kv_e((string)$v) . '</b><br>'; }
