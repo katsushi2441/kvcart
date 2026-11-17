@@ -110,18 +110,54 @@ function kv_order_after_create(int $oid): void
 // ---------------- お問い合わせ ----------------
 
 /** お問い合わせフォームの内容を保存する。ブラックリストに当たれば印を残す。 */
-function kv_inquiry_save(array $in, int $pid = 0): int
+function kv_inquiry_save(array $in, int $pid = 0, string $spam = ''): int
 {
     kv_ops_schema();
     $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
     $hit = kv_blacklist_match(['email' => $in['email'] ?? '', 'name' => $in['name'] ?? '', 'tel' => $in['tel'] ?? '', 'ip' => $ip]);
     kv_db()->prepare('INSERT INTO inquiries (created_at,name,email,tel,body,product_id,ip,status,bl_note) VALUES (?,?,?,?,?,?,?,?,?)')
-           ->execute([date('Y-m-d H:i:s'), $in['name'] ?? '', $in['email'] ?? '', $in['tel'] ?? '', $in['body'] ?? '', $pid ?: null, $ip, 'new',
+           ->execute([date('Y-m-d H:i:s'), $in['name'] ?? '', $in['email'] ?? '', $in['tel'] ?? '', $in['body'] ?? '', $pid ?: null, $ip, $spam !== '' ? 'spam' : 'new',
                       $hit ? implode(' / ', $hit) : null]);
-    return (int)kv_db()->lastInsertId();
+    $id = (int)kv_db()->lastInsertId();
+    if ($spam !== '') { kv_db()->prepare('UPDATE inquiries SET memo=? WHERE id=?')->execute(['スパム判定: ' . $spam, $id]); }
+    return $id;
 }
 
-const KV_INQ_STATUS = ['new' => '未対応', 'doing' => '対応中', 'done' => '対応済み'];
+const KV_INQ_STATUS = ['new' => '未対応', 'doing' => '対応中', 'done' => '対応済み', 'spam' => 'スパム判定'];
+
+// ---------------- フォームのスパム対策（exbridge.jp/contact.php と同じ6段・2026-11-17） ----------------
+// 2026-11-16 に kvcart へ切り替えてから「Test」「ハワイ語の営業」「英語のリード獲得業者」が届いた（CSRF しか無かった）。
+//   1) CSRF（kv_csrf）  2) ハニーポット  3) 表示から2秒未満の送信  4) 同じIPから1時間に5件まで
+//   5) 名前にURL → 保存だけして通知しない  6) 日本語が無い → 【スパム判定】を付けて通知（海外の本物の相談を取りこぼさない）
+
+/** フォームを出すときに呼ぶ。表示の時刻を覚え、ハニーポットの欄を返す（人には見えない）。 */
+function kv_form_guard_issue(string $key): string
+{
+    kv_session();
+    $_SESSION['kv_form_time_' . $key] = time();
+    return '<div style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden" aria-hidden="true">'
+         . '<label>この欄は空のままにしてください<input type="text" name="hp_memo" value="" tabindex="-1" autocomplete="off"></label></div>';
+}
+
+/**
+ * 送信を受けたときに呼ぶ。[静かに捨てる(bool), スパムの理由('' なら人), お客様に見せるエラー('' なら無し)]
+ * 静かに捨てるものは、送信者には通常どおり「受け付けました」を見せる（ボットに判定の手がかりを与えない）。
+ */
+function kv_form_guard_check(string $key, string $name, string $text): array
+{
+    if (trim((string)($_POST['hp_memo'] ?? '')) !== '') { return [true, 'ボット（ハニーポット）', '']; }
+    $t = (int)($_SESSION['kv_form_time_' . $key] ?? 0);
+    if ($t > 0 && time() - $t < 2) { return [true, 'ボット（表示から2秒未満）', '']; }
+    $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    $dir = KV_DATA . '/form_rate'; if (!is_dir($dir)) { @mkdir($dir, 0700, true); }
+    $f = $dir . '/' . md5($key . '|' . $ip) . '.json';
+    $ts = array_values(array_filter((array)(is_file($f) ? json_decode((string)file_get_contents($f), true) : []), fn($x) => time() - (int)$x < 3600));
+    if (count($ts) >= 5) { return [false, '', '送信回数が多すぎます。しばらく時間をおいてからお試しください。']; }
+    $ts[] = time(); @file_put_contents($f, json_encode($ts), LOCK_EX);
+    if (preg_match('#https?://|://|www\.#i', $name)) { return [true, 'ボット（名前にURL）', '']; }
+    if (!preg_match('/[\x{3040}-\x{30FF}\x{4E00}-\x{9FFF}]/u', $name . $text)) { return [false, 'ボット（日本語が無い）', '']; }
+    return [false, '', ''];
+}
 
 // ---------------- 帳票（PDF） ----------------
 

@@ -75,7 +75,7 @@ function kv_admin_inquiries(): void
         echo '<tr><td><input type="checkbox" name="ids[]" value="' . (int)$r['id'] . '"></td><td class="src" style="white-space:nowrap">' . kv_e(substr((string)$r['created_at'], 5, 11)) . '</td>'
            . '<td>' . ($r['bl_note'] ? '<span class="tag red" title="' . kv_e($r['bl_note']) . '">ブラックリスト</span> ' : '') . kv_e($r['name']) . '<div class="src">' . kv_e($r['email']) . '</div></td>'
            . '<td style="font-size:13px;max-width:460px">' . kv_e(mb_strimwidth(preg_replace('/\s+/u', ' ', (string)$r['body']), 0, 120, '…')) . '</td>'
-           . '<td><span class="tag ' . ['new' => 'red', 'doing' => 'or', 'done' => 'gr'][$r['status']] . '">' . kv_e(KV_INQ_STATUS[$r['status']] ?? $r['status']) . '</span></td>'
+           . '<td><span class="tag ' . (['new' => 'red', 'doing' => 'or', 'done' => 'gr', 'spam' => ''][$r['status']] ?? '') . '">' . kv_e(KV_INQ_STATUS[$r['status']] ?? $r['status']) . '</span></td>'
            . '<td class="src">' . ((int)$r['sent'] ? '送信済：' . (int)$r['sent'] . '通' : '—') . '</td>'
            . '<td style="white-space:nowrap"><a class="btn" href="?a=inquiry&id=' . (int)$r['id'] . '#reply">メール送信</a> <a class="btn gray" href="?a=inquiry&id=' . (int)$r['id'] . '">詳細</a></td></tr>';
     }
@@ -89,6 +89,7 @@ function kv_admin_inq_filter(array $g): array
     $w = ['1=1']; $a = [];
     if (!empty($g['q'])) { $w[] = '(name LIKE ? OR email LIKE ? OR body LIKE ? OR tel LIKE ?)'; array_push($a, ...array_fill(0, 4, '%' . $g['q'] . '%')); }
     if (!empty($g['status'])) { $w[] = 'status=?'; $a[] = (string)$g['status']; }
+    else { $w[] = "status<>'spam'"; }   // スパム判定は「対応状況：スパム判定」を選んだときだけ出す（おちゃのこネットの非表示と同じ考え）
     if (!empty($g['from'])) { $w[] = 'created_at>=?'; $a[] = $g['from'] . ' 00:00:00'; }
     if (!empty($g['to'])) { $w[] = 'created_at<=?'; $a[] = $g['to'] . ' 23:59:59'; }
     return [implode(' AND ', $w), $a];

@@ -877,6 +877,11 @@ function kv_page_contact(): void
             $err = 'お名前・メールアドレス・お問い合わせ内容をご記入ください。';
         } elseif (!filter_var($in['email'], FILTER_VALIDATE_EMAIL)) {
             $err = 'メールアドレスの形をご確認ください。';
+        } elseif (([$quiet, $spam, $gerr] = kv_form_guard_check('contact', $in['name'], $in['body'])) && $gerr !== '') {
+            $err = $gerr;
+        } elseif ($quiet) {
+            kv_inquiry_save($in, $pid, $spam);   // 保存だけして通知しない（管理画面のお問い合わせ受付一覧で「スパム判定」を選ぶと見られる）
+            $sent = true;
         } else {
             // ヘッダに改行を混ぜられないよう、差出人は店のアドレス固定・返信先だけお客様に向ける
             $reply = str_replace(["\r", "\n"], '', $in['email']);
@@ -887,11 +892,12 @@ function kv_page_contact(): void
                . 'Reply-To: ' . $reply . "\r\n"
                . 'Content-Type: text/plain; charset=UTF-8' . "\r\n";
             // 管理画面の「お問い合わせ受付一覧」に残す（2026-11-17）。ブラックリストに当たれば店へのメールにも書く
-            $iid = function_exists('kv_inquiry_save') ? kv_inquiry_save($in, $pid ?: (int)($_POST['pid'] ?? 0)) : 0;
+            $iid = function_exists('kv_inquiry_save') ? kv_inquiry_save($in, $pid ?: (int)($_POST['pid'] ?? 0), $spam) : 0;
             $bl = $iid ? (string)kv_db()->query('SELECT bl_note FROM inquiries WHERE id=' . $iid)->fetchColumn() : '';
             if ($bl !== '') { $body = "【ブラックリストに一致】" . $bl . "\n" . $body; }
             if ($iid) { $body .= "\n------------------------------------\n管理画面で返信: " . kv_site_url('admin.php?a=inquiry&id=' . $iid) . "\n"; }
-            $sent = kv_mail($to, mb_encode_mimeheader('[' . kv_shop('name') . '] 【お問い合わせ】' . $in['name'] . ' 様'), $body, $h);
+            if ($spam !== '') { $body = "★スパムと自動判定しました（" . $spam . "）。送信者には受付完了を表示しています。本物なら管理画面で対応状況を戻してください。\n" . $body; }
+            $sent = kv_mail($to, mb_encode_mimeheader('[' . kv_shop('name') . '] ' . ($spam !== '' ? '【スパム判定】' : '') . '【お問い合わせ】' . $in['name'] . ' 様'), $body, $h);
             if (!$sent && $iid) { $sent = true; }   // メールが送れなくても受付は保存できている
             if (!$sent) {
                 $err = '送信できませんでした。お手数ですが ' . $to . ' 宛にメールでご連絡ください。';
@@ -928,7 +934,7 @@ function kv_page_contact(): void
     if ($err !== '') { echo '<div class="alert">' . kv_e($err) . '</div>'; }
 
     echo '<form method="post" class="panel">'
-       . '<input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
+       . '<input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">' . kv_form_guard_issue('contact')
        . '<table class="formtbl">'
        . '<tr><th>お名前<span class="req">必須</span></th>'
        . '<td><input type="text" name="name" value="' . kv_e($in['name']) . '" required></td></tr>'
@@ -1133,6 +1139,10 @@ function kv_page_supplier(): void
             $err = '会社名・ご担当者名・メールアドレス・取り扱い商品のジャンルをご記入ください。';
         } elseif (!filter_var($f['email'], FILTER_VALIDATE_EMAIL)) {
             $err = 'メールアドレスの形をご確認ください。';
+        } elseif (([$quiet, $spam, $gerr] = kv_form_guard_check('supplier', $f['company'] . $f['name'], $f['body'] ?? '')) && $gerr !== '') {
+            $err = $gerr;
+        } elseif ($quiet) {
+            $sent = true;   // ボットは通知しない（送信者には受付完了を見せる）
         } else {
             $reply = str_replace(["\r", "\n"], '', $f['email']);
             $body = "会社名: {$f['company']}\nご担当者: {$f['name']}\nメール: {$f['email']}\n電話: {$f['tel']}\n"
@@ -1140,7 +1150,7 @@ function kv_page_supplier(): void
                   . "受信日時: " . date('Y-m-d H:i:s') . "\n------------------------------------\n" . $f['body'] . "\n";
             $h = 'From: ' . mb_encode_mimeheader(kv_shop('name')) . ' <' . $to . '>' . "\r\n"
                . 'Reply-To: ' . $reply . "\r\n" . 'Content-Type: text/plain; charset=UTF-8' . "\r\n";
-            $sent = kv_mail($to, mb_encode_mimeheader('【商材募集】' . $f['company'] . ' ' . $f['name'] . ' 様'), $body, $h);
+            $sent = kv_mail($to, mb_encode_mimeheader('[' . kv_shop('name') . '] ' . ($spam !== '' ? '【スパム判定】' : '') . '【商材募集】' . $f['company'] . ' ' . $f['name'] . ' 様'), ($spam !== '' ? "★スパムと自動判定しました（" . $spam . "）。\n" : '') . $body, $h);
             if (!$sent) { $err = '送信できませんでした。お手数ですが ' . $to . ' 宛にメールでご連絡ください。'; }
         }
     }
@@ -1291,7 +1301,7 @@ function kv_page_supplier(): void
     $opt = function (string $v) use ($f) { return '<option' . ($f['pricelist'] === $v ? ' selected' : '') . '>' . kv_e($v) . '</option>'; };
     $opt2 = function (string $v) use ($f) { return '<option' . ($f['topic'] === $v ? ' selected' : '') . '>' . kv_e($v) . '</option>'; };
     echo '<form method="post" class="panel" id="supplier-form"><h2>取り扱いのご相談</h2>'
-       . '<input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '"><table class="formtbl">'
+       . '<input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">' . kv_form_guard_issue('supplier') . '<table class="formtbl">'
        . '<tr><th>会社名<span class="req">必須</span></th><td><input type="text" name="company" value="' . kv_e($f['company']) . '" required></td></tr>'
        . '<tr><th>ご担当者名<span class="req">必須</span></th><td><input type="text" name="name" value="' . kv_e($f['name']) . '" required></td></tr>'
        . '<tr><th>メールアドレス<span class="req">必須</span></th><td><input type="email" name="email" value="' . kv_e($f['email']) . '" required></td></tr>'
