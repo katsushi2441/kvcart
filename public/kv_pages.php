@@ -1092,13 +1092,10 @@ function kv_page_supplier(): void
        . '.sup-flow div{background:#f5f9fa;border:1px solid #dde7ea;border-radius:10px;padding:12px;font-size:13.5px;line-height:1.6}'
        . '.sup-flow div:before{counter-increment:f;content:"STEP " counter(f);display:block;font-weight:700;color:#127a7a;font-size:12px}'
        . '.sup-makers{font-size:13.5px;line-height:1.9;color:#33414d}'
-       . '.sup-social{background:#f4f8fd;border:1px solid #dbe6f3;border-radius:14px;padding:14px;margin:0 0 14px}'
-       . '.sup-banner img{display:block;width:100%;height:auto;border-radius:10px;margin:0 0 12px}'
-       . '.sup-row h3{font-size:15px;margin:12px 0 8px}.sup-avs{display:flex;flex-wrap:wrap;gap:10px 8px}'
-       . '.sup-av{width:88px;text-align:center;text-decoration:none;color:#17242b;font-size:11.5px;line-height:1.35}'
-       . '.sup-av img{display:block;width:56px;height:56px;object-fit:cover;border-radius:50%;margin:0 auto 4px;border:2px solid #fff;box-shadow:0 0 0 1px #cfdbe8;background:#fff}'
-       . '.sup-av b{display:block;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sup-av span{display:block;color:#5b6b78;font-size:10.5px}'
-       . '@media(max-width:640px){.sup-avs{gap:8px 4px}.sup-av{width:72px;font-size:10.5px}.sup-av img{width:46px;height:46px}.sup-av span{font-size:9.5px}.sup-hero h1{font-size:21px}.sup-nums{gap:6px}.sup-nums div{padding:10px 4px}.sup-nums b{font-size:18px}.sup-cards,.sup-flow{grid-template-columns:1fr}}</style>';
+       . '.sup-social{background:#f4f8fd;border:1px solid #dbe6f3;border-radius:12px;padding:10px 12px;margin:0 0 14px}'
+       . '.sup-cap{margin:0 0 6px;font-size:13.5px;font-weight:700}.sup-giin{display:flex;flex-wrap:wrap;gap:4px}'
+       . '.sup-giin img{display:block;width:34px;height:34px;border-radius:50%;object-fit:cover;border:1px solid #cfdbe8;background:#fff}'
+       . '@media(max-width:640px){.sup-hero h1{font-size:21px}.sup-nums{gap:6px}.sup-nums div{padding:10px 4px}.sup-nums b{font-size:18px}.sup-cards,.sup-flow{grid-template-columns:1fr}}</style>';
     echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a> › 商材募集</nav>';
 
     if ($sent) {
@@ -1138,21 +1135,15 @@ function kv_page_supplier(): void
     }
     echo '</div>';
     if ($soc) {
-        $row = function (string $title, array $list, int $max, bool $round = true) {
-            $h = '<div class="sup-row"><h3>' . kv_e($title) . '</h3><div class="sup-avs">';
-            foreach (array_slice($list, 0, $max) as $x) {
-                $h .= '<a class="sup-av" href="' . kv_e($x['url'] ?: '#') . '"' . (strpos((string)$x['url'], 'exbridge.jp') === false ? ' rel="nofollow noopener" target="_blank"' : '') . '>'
-                    . '<img src="' . kv_e($x['avatar']) . '" alt="' . kv_e($x['name']) . '" width="56" height="56" loading="lazy" referrerpolicy="no-referrer"' . ($round ? '' : ' style="border-radius:12px"') . '>'
-                    . '<b>' . kv_e($x['name']) . '</b>' . (!empty($x['sub']) ? '<span>' . kv_e($x['sub']) . '</span>' : '') . '</a>';
-            }
-            return $h . '</div></div>';
-        };
-        echo '<div class="sup-social">'
-           . '<a class="sup-banner" href="' . kv_e($soc['portal']) . '#ref=exdirect-supplier"><img src="' . kv_e($soc['banner']) . '" width="1500" height="500" alt="@xb_bittensor のフォロワー企業を紹介する Kurage フォロワーポータル" loading="lazy"></a>'
-           . $row('@xb_bittensor をフォローしている国会議員（' . count($soc['giin']) . '人）', $soc['giin'], 30)
-           . $row('フォロワー1万人を超えるインフルエンサー（' . (int)$soc['counts']['influencers'] . '人のうち' . count($soc['influencers']) . '人）', $soc['influencers'], 16)
-           . $row('フォローしてくださった企業（' . count($soc['companies']) . '社）', $soc['companies'], 40, false)
-           . '<p class="src">敬称略。アカウントの公開情報をもとに当社が調べたものです。企業とインフルエンサーは「<a href="' . kv_e($soc['portal']) . '#ref=exdirect-supplier">Kurage フォロワーポータル</a>」で紹介しています。</p></div>';
+        // 国会議員のアイコンだけを小さく1列に（2026-11-17 ユーザー指示「大きすぎる」「あとのアイコンいらない。テキスト1行で」）
+        echo '<div class="sup-social"><p class="sup-cap">@xb_bittensor をフォローしている国会議員（' . count($soc['giin']) . '人）</p><div class="sup-giin">';
+        foreach ($soc['giin'] as $x) {
+            $t = $x['name'] . '（' . $x['sub'] . '）';
+            echo '<a href="' . kv_e($x['url'] ?: '#') . '" rel="nofollow noopener" target="_blank" title="' . kv_e($t) . '">'
+               . '<img src="' . kv_e($x['avatar']) . '" alt="' . kv_e($t) . '" width="34" height="34" loading="lazy" referrerpolicy="no-referrer"></a>';
+        }
+        echo '</div><p class="src" style="margin:8px 0 0">ほかに、フォロワー1万人を超えるインフルエンサー' . (int)$soc['counts']['influencers'] . '人と企業' . (int)$soc['counts']['companies']
+           . '社にもフォローされています（<a href="' . kv_e($soc['portal']) . '#ref=exdirect-supplier">Kurage フォロワーポータル</a>で紹介）。</p></div>';
     }
     echo '<p class="src">くわしくはブログ「<a href="https://exbridge.jp/vibeblog/2026-11-17-hanro-kakudai-maker-tonya-ai-x-direct.html#ref=exdirect-supplier">販路拡大をメーカー・問屋がAIで進める方法</a>」をご覧ください。'
        . '御社のXの運用も、<a href="https://exbridge.jp/ai-sns-komon.html#ref=exdirect-supplier">AI-SNS顧問</a>でお手伝いします。</p>';
