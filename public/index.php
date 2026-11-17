@@ -24,6 +24,7 @@ require __DIR__ . '/kv_order.php';
 require __DIR__ . '/kv_cart.php';
 require __DIR__ . '/kv_stripe.php';
 require __DIR__ . '/kv_pages.php';
+require __DIR__ . '/kv_feed.php';   // Google ショッピングの商品フィード
 
 // **セッションは出力より前に始める。** kv_head() を呼んだ後に session_start() すると
 // 「headers already sent」でクッキーが出ず、CSRFが毎回外れる（実測で踏んだ）。
@@ -80,6 +81,7 @@ function kv_route(string $path, int $page): void
         case '/thanks':        header('Location: ' . kv_url('cart')); return;
         case '/contact':  kv_page_contact(); return;
         case '/restock':  kv_page_restock(); return;   // 再入荷お知らせの登録（kv_stock.php）
+        case '/google-shopping.xml': kv_page_gshop_feed(); return;   // Google Merchant Center の商品フィード（kv_feed.php）
         case '/info':
         case '/help':
         case '/terms':
@@ -477,7 +479,8 @@ function kv_page_product(int $id): void
     $desc = trim(mb_substr(trim(preg_replace('/\s+/u', ' ', strip_tags(kv_clean_desc((string)$p['description'])))), 0, 140));
     $jsonld = [
         '@context' => 'https://schema.org', '@type' => 'Product',
-        'name' => $p['name'], 'sku' => $p['model_number'] ?: (string)$p['id'],
+        // 商品名は【送料無料】などの飾りを外す（Google ショッピングの商品名の決まり・2026-11-17）
+        'name' => trim(preg_replace('/\s+/u', ' ', preg_replace('/【[^】]*】/u', ' ', (string)$p['name']))) ?: $p['name'], 'sku' => $p['model_number'] ?: (string)$p['id'],
         'mpn' => kv_model_display($p['model_number'], $p['name']) ?: null,
         (strlen(kv_jan($p)) === 8 ? 'gtin8' : 'gtin13') => kv_jan($p) ?: null,
         'image' => $p['image_url'] ? kv_abs((string)$p['image_url']) : null,
@@ -496,6 +499,9 @@ function kv_page_product(int $id): void
                     'addressRegion' => array_map(fn($n) => sprintf('%02d', $n), range(2, 46))],
             ] : null,
             'availability' => kv_stock_schema_availability($p),   // 在庫数・在庫切れの扱いから（kv_stock.php）
+            // 返品の決まり（ご利用案内・特商法表示と同じ：お客様都合の返品は不可。不良・相違は到着後7日以内に良品と交換）
+            'hasMerchantReturnPolicy' => kv_is_xdirect() ? ['@type' => 'MerchantReturnPolicy', 'applicableCountry' => 'JP',
+                'returnPolicyCategory' => 'https://schema.org/MerchantReturnNotPermitted'] : null,
         ],
     ];
     if (isset($jsonld['offers']) && is_array($jsonld['offers'])) { $jsonld['offers'] = array_filter($jsonld['offers'], fn($v) => $v !== null); }
