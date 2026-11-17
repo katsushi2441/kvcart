@@ -1092,7 +1092,9 @@ function kv_page_supplier(): void
        . '.sup-flow div{background:#f5f9fa;border:1px solid #dde7ea;border-radius:10px;padding:12px;font-size:13.5px;line-height:1.6}'
        . '.sup-flow div:before{counter-increment:f;content:"STEP " counter(f);display:block;font-weight:700;color:#127a7a;font-size:12px}'
        . '.sup-makers{font-size:13.5px;line-height:1.9;color:#33414d}'
-       . '.sup-social{background:#f4f8fd;border:1px solid #dbe6f3;border-radius:12px;padding:10px 12px;margin:0 0 14px}'
+       . '.sup-social{background:#f4f8fd;border:1px solid #dbe6f3;border-radius:12px;padding:10px 12px;margin:0 0 14px;display:flex;gap:14px;align-items:center}'
+       . '.sup-banner{flex:0 0 330px}.sup-banner img{display:block;width:100%;height:auto;border-radius:8px}.sup-sbody{flex:1;min-width:0}'
+       . '@media(max-width:760px){.sup-social{display:block}.sup-banner{display:block;margin:0 0 8px}}'
        . '.sup-cap{margin:0 0 6px;font-size:13.5px;font-weight:700}.sup-giin{display:flex;flex-wrap:wrap;gap:4px}'
        . '.sup-giin img{display:block;width:34px;height:34px;border-radius:50%;object-fit:cover;border:1px solid #cfdbe8;background:#fff}'
        . '@media(max-width:640px){.sup-hero h1{font-size:21px}.sup-nums{gap:6px}.sup-nums div{padding:10px 4px}.sup-nums b{font-size:18px}.sup-cards,.sup-flow{grid-template-columns:1fr}}</style>';
@@ -1136,14 +1138,15 @@ function kv_page_supplier(): void
     echo '</div>';
     if ($soc) {
         // 国会議員のアイコンだけを小さく1列に（2026-11-17 ユーザー指示「大きすぎる」「あとのアイコンいらない。テキスト1行で」）
-        echo '<div class="sup-social"><p class="sup-cap">@xb_bittensor をフォローしている国会議員（' . count($soc['giin']) . '人）</p><div class="sup-giin">';
+        echo '<div class="sup-social"><a class="sup-banner" href="' . kv_e($soc['portal']) . '#ref=exdirect-supplier"><img src="' . kv_e($soc['banner']) . '" width="1500" height="500" alt="@xb_bittensor のフォロワーを紹介する Kurage フォロワーポータル" loading="lazy"></a>'
+           . '<div class="sup-sbody"><p class="sup-cap">@xb_bittensor をフォローしている国会議員（' . count($soc['giin']) . '人）</p><div class="sup-giin">';
         foreach ($soc['giin'] as $x) {
             $t = $x['name'] . '（' . $x['sub'] . '）';
             echo '<a href="' . kv_e($x['url'] ?: '#') . '" rel="nofollow noopener" target="_blank" title="' . kv_e($t) . '">'
                . '<img src="' . kv_e($x['avatar']) . '" alt="' . kv_e($t) . '" width="34" height="34" loading="lazy" referrerpolicy="no-referrer"></a>';
         }
         echo '</div><p class="src" style="margin:8px 0 0">ほかに、フォロワー1万人を超えるインフルエンサー' . (int)$soc['counts']['influencers'] . '人と企業' . (int)$soc['counts']['companies']
-           . '社にもフォローされています（<a href="' . kv_e($soc['portal']) . '#ref=exdirect-supplier">Kurage フォロワーポータル</a>で紹介）。</p></div>';
+           . '社にもフォローされています（<a href="' . kv_e($soc['portal']) . '#ref=exdirect-supplier">Kurage フォロワーポータル</a>で紹介）。</p></div></div>';
     }
     echo '<p class="src">くわしくはブログ「<a href="https://exbridge.jp/vibeblog/2026-11-17-hanro-kakudai-maker-tonya-ai-x-direct.html#ref=exdirect-supplier">販路拡大をメーカー・問屋がAIで進める方法</a>」をご覧ください。'
        . '御社のXの運用も、<a href="https://exbridge.jp/ai-sns-komon.html#ref=exdirect-supplier">AI-SNS顧問</a>でお手伝いします。</p>';
