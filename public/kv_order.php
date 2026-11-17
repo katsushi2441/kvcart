@@ -59,6 +59,18 @@ function kv_order_schema(): void
     );
     CREATE INDEX IF NOT EXISTS ix_mails_order ON order_mails(order_id);
     ");
+    // メールマネジメント（おちゃのこネット）の区分。送ったメールがどの区分か（受注・発送・入金・その他）と、テンプレートの名前・区分
+    static $up = false;
+    if (!$up) {
+        $up = true;
+        $has = fn(string $t, string $c) => in_array($c, array_column(kv_db()->query("PRAGMA table_info($t)")->fetchAll(), 'name'), true);
+        if (!$has('order_mails', 'kind'))    { kv_db()->exec('ALTER TABLE order_mails ADD COLUMN kind TEXT'); }
+        if (!$has('mail_templates', 'label')) { kv_db()->exec('ALTER TABLE mail_templates ADD COLUMN label TEXT'); }
+        if (!$has('mail_templates', 'kind'))  { kv_db()->exec('ALTER TABLE mail_templates ADD COLUMN kind TEXT'); }
+        // 区分を記録する前に送ったメールは、件名から区分を当てる
+        kv_db()->exec("UPDATE order_mails SET kind = CASE WHEN subject LIKE '%発送%' THEN 'shipped' WHEN subject LIKE '%入金%' THEN 'paid'"
+                      . " WHEN subject LIKE '%ご注文%' OR subject LIKE '%納期%' OR subject LIKE '%承り%' THEN 'received' ELSE 'other' END WHERE kind IS NULL");
+    }
 }
 
 /** 購入者の入力から、保存する住所文字列を組み立てる（都道府県＋市区町村＋番地＋建物）。 */
@@ -232,8 +244,60 @@ function kv_mail_defaults(): array
     ];
 }
 
-/** テンプレートの名前（管理画面に出す）。 */
+/** テンプレートの区分（おちゃのこネットのメールマネジメントの4区分）。 */
+function kv_mail_default_kinds(): array
+{
+    return ['order_received' => 'received', 'order_paid_card' => 'received', 'stock_ok' => 'received', 'flag_received' => 'received',
+            'flag_paid' => 'paid', 'flag_shipped' => 'shipped', 'flag_other' => 'other', 'stripe_invoice' => 'other'];
+}
+
+/** 全テンプレート（標準＋自分で足したもの）: key => ['label','kind']。 */
+function kv_mail_templates_all(): array
+{
+    kv_order_schema();
+    $out = [];
+    $kinds = kv_mail_default_kinds();
+    foreach (kv_mail_default_labels() as $k => $l) { $out[$k] = ['label' => $l, 'kind' => $kinds[$k] ?? 'other']; }
+    foreach (kv_db()->query('SELECT key,label,kind FROM mail_templates') as $r) {
+        if (isset($out[$r['key']])) {
+            if ($r['label']) { $out[$r['key']]['label'] = $r['label']; }
+            if ($r['kind'])  { $out[$r['key']]['kind'] = $r['kind']; }
+        } elseif (strpos((string)$r['key'], 'custom_') === 0) {
+            $out[$r['key']] = ['label' => $r['label'] ?: $r['key'], 'kind' => $r['kind'] ?: 'other'];
+        }
+    }
+    return $out;
+}
+
 function kv_mail_labels(): array
+{
+    return array_map(fn($t) => $t['label'], kv_mail_templates_all());
+}
+
+function kv_mail_kind(string $key): string
+{
+    return kv_mail_templates_all()[$key]['kind'] ?? 'other';
+}
+
+/** 件名の先頭に必ず [店名] を付ける（2026-11-17 ユーザー指示「メールのタイトルには [X-Direct] って必ず入れて」）。 */
+function kv_mail_subject(string $s): string
+{
+    $tag = '[' . kv_shop('name') . ']';
+    $s = trim($s);
+    return kv_shop('name') === '' || strpos($s, $tag) !== false ? $s : $tag . ' ' . $s;
+}
+
+/** 受注ごとに、どの区分のメールを送ったか（受注一覧のメールアイコンの青いチェック）。 */
+function kv_order_mail_kinds(int $oid): array
+{
+    kv_order_schema();
+    $st = kv_db()->prepare('SELECT DISTINCT kind FROM order_mails WHERE order_id=? AND ok=1 AND kind IS NOT NULL');
+    $st->execute([$oid]);
+    return array_fill_keys(array_column($st->fetchAll(), 'kind'), true);
+}
+
+/** 標準テンプレートの名前。 */
+function kv_mail_default_labels(): array
 {
     return ['order_received' => 'ご注文受付（注文時に自動）', 'order_paid_card' => 'カード払いのご注文受付（決済後に自動）',
             'stock_ok' => '納期とお振込先のご案内', 'flag_received' => '受注の完了', 'flag_paid' => '入金の確認',
@@ -241,15 +305,16 @@ function kv_mail_labels(): array
 }
 
 /** 管理画面で書いたメールを、そのままの件名・本文で送る（Cc 可）。送った全文を order_mails に残す。 */
-function kv_mail_send_text(int $oid, string $to, string $cc, string $subj, string $body): bool
+function kv_mail_send_text(int $oid, string $to, string $cc, string $subj, string $body, string $kind = 'other'): bool
 {
     kv_order_schema();
+    $subj = kv_mail_subject($subj);
     $from = kv_shop('email');
     $h = "From: " . mb_encode_mimeheader(kv_shop('name')) . " <$from>\r\n"
        . "Reply-To: $from\r\nContent-Type: text/plain; charset=UTF-8\r\n";
     $ok = kv_mail($to, mb_encode_mimeheader($subj), $body, $h, $cc);
-    kv_db()->prepare('INSERT INTO order_mails (order_id,at,to_addr,cc,subject,body,ok) VALUES (?,?,?,?,?,?,?)')
-           ->execute([$oid, date('Y-m-d H:i:s'), $to, $cc, $subj, $body, $ok ? 1 : 0]);
+    kv_db()->prepare('INSERT INTO order_mails (order_id,at,to_addr,cc,subject,body,ok,kind) VALUES (?,?,?,?,?,?,?,?)')
+           ->execute([$oid, date('Y-m-d H:i:s'), $to, $cc, $subj, $body, $ok ? 1 : 0, $kind]);
     kv_log($oid, 'mail', ($ok ? '送信' : '送信できず') . ': ' . $subj . ' → ' . $to . ($cc !== '' ? '（Cc ' . $cc . '）' : ''));
     return (bool)$ok;
 }
@@ -275,8 +340,14 @@ function kv_mail_template(string $key): array
 
 function kv_mail_render(int $oid, string $key): array
 {
-    $o = kv_order($oid);
     [$subj, $body] = kv_mail_template($key);
+    return kv_mail_render_text($oid, $subj, $body);
+}
+
+/** 埋め込みタグ（{name} など）を受注の内容に置き換える。まとめて送るときは、1通ずつここを通す。 */
+function kv_mail_render_text(int $oid, string $subj, string $body): array
+{
+    $o = kv_order($oid);
     $items = '';
     foreach (kv_order_items($oid) as $it) {
         $items .= sprintf("%s%s × %d = %s円\n", $it['name'],
@@ -319,13 +390,14 @@ function kv_mail_send(int $oid, string $key): bool
     if (!$o || !$o['email']) { return false; }
     [$subj, $body] = kv_mail_render($oid, $key);
     if ($subj === '') { return false; }
+    $subj = kv_mail_subject($subj);
     $from = kv_shop('email');
     $h = "From: " . mb_encode_mimeheader(kv_shop('name')) . " <$from>\r\n"
        . "Reply-To: $from\r\nContent-Type: text/plain; charset=UTF-8\r\n";
     $ok = kv_mail($o['email'], mb_encode_mimeheader($subj), $body, $h);
     kv_log($oid, 'mail', ($ok ? '送信' : '送信できず') . ': ' . $key . ' → ' . $o['email']);
-    kv_db()->prepare('INSERT INTO order_mails (order_id,at,to_addr,cc,subject,body,ok) VALUES (?,?,?,?,?,?,?)')
-           ->execute([$oid, date('Y-m-d H:i:s'), $o['email'], '', $subj, $body, $ok ? 1 : 0]);
+    kv_db()->prepare('INSERT INTO order_mails (order_id,at,to_addr,cc,subject,body,ok,kind) VALUES (?,?,?,?,?,?,?,?)')
+           ->execute([$oid, date('Y-m-d H:i:s'), $o['email'], '', $subj, $body, $ok ? 1 : 0, kv_mail_kind($key)]);
     if (in_array($key, ['order_received', 'order_paid_card'], true) && $from !== '') {
         // 店にも同じ内容を送る（新しい注文に気づけるように）。カード払いは決済が終わってから
         $note = ($key === 'order_paid_card' ? "新しい注文が入り、カードでのお支払いも確認しました。" : "新しい注文が入りました。")

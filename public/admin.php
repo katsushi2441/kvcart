@@ -15,6 +15,9 @@
  */
 declare(strict_types=1);
 
+// 管理画面であることの印。kv_head / kv_footer がお店の見た目ではなく管理画面の見た目を出す
+define('KV_ADMIN', true);
+
 require __DIR__ . '/kv_shop.php';
 require __DIR__ . '/kv_session.php';
 require __DIR__ . '/kv_lib.php';
@@ -23,6 +26,7 @@ require __DIR__ . '/kv_order.php';
 require __DIR__ . '/kv_stripe.php';
 require __DIR__ . '/kv_cart.php';
 require __DIR__ . '/kv_admin_catalog.php';
+require __DIR__ . '/kv_pages.php';   // 運営マニュアルを管理画面の中で出すため
 
 kv_session();
 kv_admin_guard();
@@ -37,6 +41,8 @@ switch ($act) {
     case 'new':    kv_admin_new(); break;
     case 'mail':   kv_admin_mail_templates(); break;
     case 'compose': kv_admin_compose(); break;
+    case 'bcompose': kv_admin_bcompose(); break;
+    case 'manual':   kv_page_manual(); break;   // 管理画面の見た目で出る（KV_ADMIN）
     // 商品・メーカー・カテゴリ・顧客・売上（kv_admin_catalog.php・2026-11-17）
     case 'products':   kv_admin_products(); break;
     case 'product':    kv_admin_product(); break;
@@ -99,43 +105,48 @@ function kv_admin_guard(): void
 
 function kv_admin_nav(string $now): void
 {
-    $t = [
-        'orders' => '受注一覧', 'new' => '代理入力', 'products' => '商品', 'price' => '価格の一括改定', 'pimport' => '商品CSV取り込み',
-        'makers' => 'メーカー', 'categories' => 'カテゴリ', 'customers' => '顧客', 'stats' => '売上', 'plog' => '商品の変更履歴',
-        'mail' => 'メールテンプレート',
+    // おちゃのこネットの管理画面と同じく、仕事ごとにまとめる（受注管理・商品管理・設定）
+    $groups = [
+        '受注管理' => ['orders' => '受注一覧と明細', 'new' => '代理入力', 'customers' => '顧客', 'stats' => '売上'],
+        '商品管理' => ['products' => '商品', 'price' => '価格の一括改定', 'pimport' => '商品CSV取り込み', 'makers' => 'メーカー',
+                       'categories' => 'カテゴリ', 'plog' => '商品の変更履歴'],
+        '設定' => ['mail' => 'メールテンプレート設定', 'manual' => '運営マニュアル'],
     ];
-    echo '<div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap">';
-    foreach ($t as $k => $label) {
-        $cls = $k === $now ? 'btn' : 'btn gray';
-        echo '<a class="' . $cls . '" href="?a=' . $k . '">' . kv_e($label) . '</a>';
+    echo '</div><nav class="admnav"><div class="inner">';
+    foreach ($groups as $g => $items) {
+        echo '<div class="grp"><span class="gl">' . kv_e($g) . '</span>';
+        foreach ($items as $k => $label) { echo '<a' . ($k === $now ? ' class="now"' : '') . ' href="?a=' . $k . '">' . kv_e($label) . '</a>'; }
+        echo '</div>';
     }
-    echo '<a class="btn gray" href="' . kv_url('manual') . '" target="_blank" rel="noopener">運営マニュアル</a>'
-       . '<a class="btn gray" href="' . kv_url('') . '" target="_blank" rel="noopener">店を見る</a>'
-       . '<a class="btn gray" href="?logout=1">ログアウト</a></div>';
+    echo '</div></nav><div class="wrap" style="max-width:1320px">';
 }
 
 // ---------------- 受注一覧 ----------------
 
 function kv_admin_orders(): void
 {
-    // 一括操作
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && kv_csrf_ok() && !empty($_POST['bulk'])) {
-        $ids = array_map('intval', (array)($_POST['ids'] ?? []));
-        $flag = (string)$_POST['bulk_flag'];
-        $send = !empty($_POST['bulk_mail']);
-        foreach ($ids as $id) {
-            if ($flag === 'cancel') {
-                kv_db()->prepare('UPDATE orders SET cancelled=1 WHERE id=?')->execute([$id]);
-                kv_log($id, 'cancel', 'キャンセルしました');
-            } elseif ($flag === 'hide') {
-                kv_db()->prepare('UPDATE orders SET hidden=1 WHERE id=?')->execute([$id]);
-                kv_log($id, 'hide', '一覧から外しました');
-            } elseif (isset(KV_FLAGS[$flag])) {
-                kv_order_flag($id, $flag, true, $send);
-            }
+    // おちゃのこネットの「受注一覧と明細」に合わせる（docs/ocnk_manual/ に実際のマニュアルを保存・2026-11-17）:
+    //   - 右端の「メールマネジメント」に 受注・発送・入金・その他 の4区分。上段＝状態アイコン（押すと完了／取り消し）、
+    //     下段＝メールアイコン（押すとその区分のテンプレートを読み込んだメール送信画面。送ると青いチェック）
+    //   - 左のチェックで複数選んで「〇完了にする」「メールを一括送信」「非表示にする」「取り出す」
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && kv_csrf_ok()) {
+        $back = '?' . preg_replace('/(^|&)(done|mailed)=[^&]*/', '', (string)$_SERVER['QUERY_STRING']);
+        if (!empty($_POST['toggle'])) {
+            [$id, $k] = explode(':', (string)$_POST['toggle'] . ':');
+            $o = kv_order((int)$id);
+            if ($o && isset(KV_FLAGS[$k])) { kv_order_flag((int)$id, $k, (int)$o['f_' . $k] !== 1, false); }
+            header('Location: ' . $back); exit;
         }
-        header('Location: ?' . $_SERVER['QUERY_STRING']);
-        exit;
+        $ids = array_map('intval', (array)($_POST['ids'] ?? []));
+        $op = (string)($_POST['op'] ?? '');
+        if ($op === 'mail' && $ids) { header('Location: ?a=bcompose&ids=' . implode(',', $ids) . '&back=' . rawurlencode($back)); exit; }
+        foreach ($ids as $id) {
+            if (isset(KV_FLAGS[$op])) { kv_order_flag($id, $op, true, false); }
+            elseif ($op === 'hide')   { kv_db()->prepare('UPDATE orders SET hidden=1 WHERE id=?')->execute([$id]); kv_log($id, 'hide', '非表示にしました'); }
+            elseif ($op === 'unhide') { kv_db()->prepare('UPDATE orders SET hidden=0 WHERE id=?')->execute([$id]); kv_log($id, 'hide', '取り出しました'); }
+            elseif ($op === 'cancel') { kv_db()->prepare('UPDATE orders SET cancelled=1 WHERE id=?')->execute([$id]); kv_log($id, 'cancel', 'キャンセルしました'); }
+        }
+        header('Location: ' . $back . '&done=' . count($ids)); exit;
     }
     $f = [
         'q' => trim((string)($_GET['q'] ?? '')),
@@ -144,65 +155,198 @@ function kv_admin_orders(): void
         'show_hidden' => !empty($_GET['show_hidden']),
     ];
     foreach (array_keys(KV_FLAGS) as $k) { $f['f_' . $k] = (string)($_GET['f_' . $k] ?? ''); }
-    $r = kv_orders($f, max(1, (int)($_GET['p'] ?? 1)));
+    $per = (int)($_GET['per'] ?? 30); if (!in_array($per, [20, 30, 50, 100], true)) { $per = 30; }
+    $r = kv_orders_ex($f + ['amin' => $_GET['amin'] ?? '', 'amax' => $_GET['amax'] ?? '', 'pay' => $_GET['pay'] ?? '',
+                            'memo' => !empty($_GET['memo']), 'hidden_only' => !empty($_GET['hidden_only'])], max(1, (int)($_GET['p'] ?? 1)), $per);
 
-    kv_head('受注一覧', '', '/admin', ['noindex' => true]);
-    echo '<div class="wrap" style="max-width:1200px">';
+    kv_head('受注一覧と明細', '', '/admin', ['noindex' => true]);
+    echo '<div class="wrap" style="max-width:1280px">';
     kv_admin_nav('orders');
-    echo '<h1>受注一覧</h1>';
-    // 絞り込み
-    echo '<form class="panel" method="get"><input type="hidden" name="a" value="orders">'
-       . '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">'
-       . '<div><label class="src">検索（受注番号・氏名・会社・メール・電話・管理メモ）</label>'
-       . '<input name="q" value="' . kv_e($f['q']) . '" style="min-width:260px;padding:8px;border:2px solid #cfdae4;border-radius:8px"></div>'
-       . '<div><label class="src">期間</label><input type="date" name="from" value="' . kv_e($f['from'])
-       . '" style="padding:8px;border:2px solid #cfdae4;border-radius:8px"> 〜 '
-       . '<input type="date" name="to" value="' . kv_e($f['to']) . '" style="padding:8px;border:2px solid #cfdae4;border-radius:8px"></div>';
+    echo '<style>.mm td.mmc{padding:3px 2px;text-align:center;background:#fffaf0;border-left:1px solid #f0e2c4}'
+       . '.mmb{display:inline-flex;align-items:center;justify-content:center;width:34px;height:26px;border:1px solid #cfd8e0;border-radius:5px;background:#f4f6f8;color:#8a97a3;font-size:14px;cursor:pointer;text-decoration:none;line-height:1}'
+       . '.mmb.on{background:#e8473f;border-color:#c6332c;color:#fff}.mmb.ml{background:#fff}.mmb.ml.sent{background:#2f8fd0;border-color:#1f6fa8;color:#fff}'
+       . '.mm th.mmh{font-size:11px;padding:2px;background:#fff1d6;text-align:center}.qd a{margin-right:4px}</style>';
+    echo '<h1>受注一覧と明細</h1><p><a class="btn gray" href="?a=new">＋ 新しく受注情報を登録する</a></p>';
+    if (!empty($_GET['done'])) { echo '<div class="note">' . (int)$_GET['done'] . '件を更新しました。</div>'; }
+    if (isset($_GET['mailed'])) { echo '<div class="note">メールを ' . (int)$_GET['mailed'] . '通送りました。</div>'; }
+    $sel = 'padding:7px;border:2px solid #cfdae4;border-radius:8px';
+    // 受注検索
+    $d = fn($t) => date('Y-m-d', $t);
+    $quick = ['今日' => [$d(time()), $d(time())], '昨日' => [$d(strtotime('-1 day')), $d(strtotime('-1 day'))],
+              '今月' => [date('Y-m-01'), $d(time())], '前月' => [date('Y-m-01', strtotime('first day of last month')), date('Y-m-t', strtotime('first day of last month'))], '全て' => ['', '']];
+    echo '<form class="panel" method="get"><input type="hidden" name="a" value="orders"><b>受注検索</b>'
+       . '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:6px">'
+       . '<div><label class="src">キーワード（受注番号・名前・会社・メール・電話・住所・管理用メモ・商品名・型番）</label>'
+       . '<input name="q" value="' . kv_e($f['q']) . '" style="min-width:280px;' . $sel . '"></div>'
+       . '<div><label class="src">受注日時 <span class="qd">';
+    foreach ($quick as $lb => [$a1, $a2]) {
+        echo '<a href="?' . kv_e(http_build_query(array_merge(array_diff_key($_GET, ['p' => 1, 'done' => 1, 'mailed' => 1]), ['a' => 'orders', 'from' => $a1, 'to' => $a2]))) . '">' . $lb . '</a>';
+    }
+    echo '</span></label><input type="date" name="from" value="' . kv_e($f['from']) . '" style="' . $sel . '"> 〜 '
+       . '<input type="date" name="to" value="' . kv_e($f['to']) . '" style="' . $sel . '"></div>'
+       . '<div><label class="src">合計金額</label><input name="amin" value="' . kv_e($_GET['amin'] ?? '') . '" style="width:90px;' . $sel . '" inputmode="numeric"> 〜 '
+       . '<input name="amax" value="' . kv_e($_GET['amax'] ?? '') . '" style="width:90px;' . $sel . '" inputmode="numeric"></div>';
     foreach (KV_FLAGS as $k => $label) {
-        echo '<div><label class="src">' . $label . '</label><select name="f_' . $k
-           . '" style="padding:8px;border:2px solid #cfdae4;border-radius:8px">'
-           . '<option value="">すべて</option>'
-           . '<option value="1"' . ($f['f_' . $k] === '1' ? ' selected' : '') . '>完了</option>'
-           . '<option value="0"' . ($f['f_' . $k] === '0' ? ' selected' : '') . '>未</option></select></div>';
+        echo '<div><label class="src">' . $label . '</label><select name="f_' . $k . '" style="' . $sel . '">'
+           . '<option value="">----</option>'
+           . '<option value="0"' . ($f['f_' . $k] === '0' ? ' selected' : '') . '>未完了</option>'
+           . '<option value="1"' . ($f['f_' . $k] === '1' ? ' selected' : '') . '>完了</option></select></div>';
     }
-    echo '<div><button class="btn" type="submit">絞り込む</button></div>'
-       . '<div><a class="btn gray" href="?a=csv&' . kv_e(http_build_query($_GET)) . '">CSVで落とす</a></div>'
-       . '</div></form>';
+    echo '<div><label class="src">キャンセル</label><select name="cancelled" style="' . $sel . '"><option value="">----</option>'
+       . '<option value="0"' . ($f['cancelled'] === '0' ? ' selected' : '') . '>キャンセル以外</option><option value="1"' . ($f['cancelled'] === '1' ? ' selected' : '') . '>キャンセルのみ</option></select></div>'
+       . '<div><label class="src">支払い方法</label><select name="pay" style="' . $sel . '"><option value="">全て</option>'
+       . '<option value="bank"' . (($_GET['pay'] ?? '') === 'bank' ? ' selected' : '') . '>銀行振込</option><option value="stripe"' . (($_GET['pay'] ?? '') === 'stripe' ? ' selected' : '') . '>クレジットカード</option></select></div>'
+       . '<div><label class="src"><input type="checkbox" name="memo" value="1"' . (!empty($_GET['memo']) ? ' checked' : '') . '> 管理用メモに記入のある受注</label><br>'
+       . '<label class="src"><input type="checkbox" name="hidden_only" value="1"' . (!empty($_GET['hidden_only']) ? ' checked' : '') . '> 非表示になっている受注</label></div>'
+       . '<div><label class="src">表示件数</label><select name="per" style="' . $sel . '">';
+    foreach ([20, 30, 50, 100] as $n) { echo '<option' . ($n === $per ? ' selected' : '') . '>' . $n . '</option>'; }
+    echo '</select></div><div><button class="btn" type="submit">絞り込む</button> <a class="btn gray" href="?a=orders">絞り込み解除</a></div>'
+       . '<div><a class="btn gray" href="?a=csv&' . kv_e(http_build_query($_GET)) . '">CSVで落とす</a></div></div></form>';
 
-    echo '<form method="post"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
-       . '<div class="scroll"><table class="t"><tr><th></th><th>受注番号</th><th>受注日時</th>'
-       . '<th>お客様</th><th>合計</th>';
-    foreach (KV_FLAGS as $label) { echo '<th>' . $label . '</th>'; }
-    echo '<th>支払</th><th></th></tr>';
+    $csrf = '<input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">';
+    echo '<p class="src">' . number_format($r['total']) . '件</p>'
+       . '<form method="post" id="olist">' . $csrf
+       . '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0"><span class="src">チェックした受注を：</span>'
+       . '<button class="btn gray" name="op" value="received" onclick="return confirm(\'受注完了にします\')">受注完了</button>'
+       . '<button class="btn gray" name="op" value="shipped" onclick="return confirm(\'発送完了にします\')">発送完了</button>'
+       . '<button class="btn gray" name="op" value="paid" onclick="return confirm(\'入金完了にします\')">入金完了</button>'
+       . '<button class="btn gray" name="op" value="other" onclick="return confirm(\'その他完了にします\')">その他完了</button>'
+       . '<button class="btn" name="op" value="mail">✉ メールを一括送信</button>'
+       . (!empty($_GET['hidden_only']) ? '<button class="btn gray" name="op" value="unhide">取り出す</button>' : '<button class="btn gray" name="op" value="hide" onclick="return confirm(\'非表示にします\')">非表示にする</button>')
+       . '</div><div class="scroll"><table class="t mm"><tr><th rowspan="2"><input type="checkbox" onclick="for(const c of document.querySelectorAll(\'.oid\'))c.checked=this.checked"></th>'
+       . '<th rowspan="2">受注日時</th><th rowspan="2">受注番号</th><th rowspan="2">購入者</th><th rowspan="2">合計金額</th><th rowspan="2">支払</th><th rowspan="2">詳細</th>'
+       . '<th colspan="4" style="text-align:center;background:#fff1d6">メールマネジメント</th></tr><tr>';
+    $order4 = ['received' => '受注', 'shipped' => '発送', 'paid' => '入金', 'other' => 'その他'];
+    foreach ($order4 as $lb) { echo '<th class="mmh">' . $lb . '</th>'; }
+    echo '</tr>';
+    $cnt = kv_db()->prepare('SELECT COUNT(*) FROM orders WHERE lower(email)=lower(?) AND cancelled=0');
     foreach ($r['items'] as $o) {
-        $rep = kv_is_repeater((string)$o['email'], (int)$o['id']);
+        $id = (int)$o['id'];
+        $cnt->execute([(string)$o['email']]); $n = (int)$cnt->fetchColumn();
+        $sent = kv_order_mail_kinds($id);
         echo '<tr' . ((int)$o['cancelled'] === 1 ? ' style="background:#fdf6f6"' : '') . '>'
-           . '<td><input type="checkbox" name="ids[]" value="' . (int)$o['id'] . '"></td>'
-           . '<td><a href="?a=order&id=' . (int)$o['id'] . '">' . kv_e($o['code']) . '</a>'
-           . ((int)$o['cancelled'] === 1 ? '<div class="src" style="color:#b3261e">キャンセル</div>' : '') . '</td>'
-           . '<td class="src">' . kv_e(substr((string)$o['created_at'], 0, 16)) . '</td>'
-           . '<td>' . kv_e($o['name']) . ($o['company'] ? '<div class="src">' . kv_e($o['company']) . '</div>' : '')
-           . ($rep ? '<div class="src" style="color:#0a7d75">リピーター</div>' : '') . '</td>'
-           . '<td>' . number_format((int)$o['total']) . '円</td>';
-        foreach (array_keys(KV_FLAGS) as $k) {
-            echo '<td style="text-align:center">' . ((int)$o['f_' . $k] === 1 ? '✓' : '—') . '</td>';
+           . '<td rowspan="2"><input class="oid" type="checkbox" name="ids[]" value="' . $id . '"></td>'
+           . '<td rowspan="2" class="src" style="white-space:nowrap">' . kv_e(substr((string)$o['created_at'], 5, 11)) . '</td>'
+           . '<td rowspan="2"><a href="?a=order&id=' . $id . '">' . kv_e($o['code']) . '</a>' . ((int)$o['cancelled'] === 1 ? '<div class="src" style="color:#b3261e">キャンセル</div>' : '') . '</td>'
+           . '<td rowspan="2">' . ($n >= 2 ? '<span class="tag" style="background:#e9f7ef;color:#14632f" title="購入回数">' . $n . '回</span> ' : '')
+           . '<a href="?a=order&id=' . $id . '">' . kv_e($o['name']) . '</a>' . ($o['company'] ? '<div class="src">' . kv_e($o['company']) . '</div>' : '') . '</td>'
+           . '<td rowspan="2" style="text-align:right;white-space:nowrap">' . number_format((int)$o['total']) . '円</td>'
+           . '<td rowspan="2" class="src">' . ($o['payment'] === 'stripe' ? 'カード' : '振込') . '</td>'
+           . '<td rowspan="2"><a class="btn gray" href="?a=order&id=' . $id . '">明細</a></td>';
+        foreach (array_keys($order4) as $k) {
+            $on = (int)$o['f_' . $k] === 1;
+            echo '<td class="mmc"><button type="submit" form="olist" class="mmb' . ($on ? ' on' : '') . '" name="toggle" value="' . $id . ':' . $k . '" title="'
+               . $order4[$k] . ($on ? '完了（' . kv_e(substr((string)$o[$k . '_at'], 5, 11)) . '）押すと取り消し' : '：押すと完了にする') . '">' . ($on ? '✓' : '□') . '</button></td>';
         }
-        echo '<td class="src">' . ($o['payment'] === 'stripe' ? 'カード' : '振込') . '</td>'
-           . '<td><a class="btn gray" href="?a=order&id=' . (int)$o['id'] . '">明細</a></td></tr>';
+        echo '</tr><tr' . ((int)$o['cancelled'] === 1 ? ' style="background:#fdf6f6"' : '') . '>';
+        foreach (array_keys($order4) as $k) {
+            $tpl = ['received' => ($o['payment'] === 'bank' ? 'stock_ok' : 'flag_received'), 'shipped' => 'flag_shipped', 'paid' => 'flag_paid', 'other' => 'flag_other'][$k];
+            echo '<td class="mmc"><a class="mmb ml' . (!empty($sent[$k]) ? ' sent' : '') . '" href="?a=compose&id=' . $id . '&tpl=' . $tpl . '&back=' . rawurlencode('?' . (string)$_SERVER['QUERY_STRING'])
+               . '" title="' . $order4[$k] . 'のメールを書く' . (!empty($sent[$k]) ? '（送信済み）' : '') . '">' . (!empty($sent[$k]) ? '✓' : '✉') . '</a></td>';
+        }
+        echo '</tr>';
     }
-    echo '</table></div>';
-    echo '<div class="panel" style="margin-top:14px"><b>選択した受注をまとめて処理</b><br>'
-       . '<select name="bulk_flag" style="padding:8px;border:2px solid #cfdae4;border-radius:8px">';
-    foreach (KV_FLAGS as $k => $label) { echo '<option value="' . $k . '">' . $label . 'を完了にする</option>'; }
-    echo '<option value="cancel">キャンセルにする</option><option value="hide">一覧から外す</option></select> '
-       . '<label class="src"><input type="checkbox" name="bulk_mail" value="1"> メールも送る</label> '
-       . '<button class="btn" type="submit" name="bulk" value="1">実行</button></div></form>';
-    kv_pager($r, '?a=orders&' . http_build_query(array_diff_key($_GET, ['p' => 1])));
+    echo '</table></div></form>'
+       . '<p class="src">メールマネジメントの上段は処理状況（赤＝完了。押すと切り替え）、下段はメール（押すとメールを書く画面。送ると青いチェック）。</p>';
+    kv_pager($r, '?' . http_build_query(array_diff_key($_GET, ['p' => 1, 'done' => 1, 'mailed' => 1])));
     echo '</div>';
     kv_footer();
 }
 
-// ---------------- 受注明細 ----------------
+/** 受注の検索（おちゃのこネットの受注検索に合わせて、合計金額・支払い方法・管理用メモ・商品名・非表示も）。 */
+function kv_orders_ex(array $f, int $page, int $per): array
+{
+    kv_order_schema();
+    $w = [!empty($f['hidden_only']) ? 'hidden=1' : 'hidden=0']; $a = [];
+    foreach (array_keys(KV_FLAGS) as $k) { if (($f['f_' . $k] ?? '') !== '') { $w[] = "f_$k=?"; $a[] = (int)$f['f_' . $k]; } }
+    if (!empty($f['from'])) { $w[] = 'created_at>=?'; $a[] = $f['from'] . ' 00:00:00'; }
+    if (!empty($f['to']))   { $w[] = 'created_at<=?'; $a[] = $f['to'] . ' 23:59:59'; }
+    if ((string)$f['amin'] !== '') { $w[] = 'total>=?'; $a[] = (int)$f['amin']; }
+    if ((string)$f['amax'] !== '') { $w[] = 'total<=?'; $a[] = (int)$f['amax']; }
+    if (!empty($f['pay'])) { $w[] = 'payment=?'; $a[] = (string)$f['pay']; }
+    if (!empty($f['memo'])) { $w[] = "COALESCE(admin_memo,'')<>''"; }
+    if (($f['cancelled'] ?? '') !== '') { $w[] = 'cancelled=?'; $a[] = (int)$f['cancelled']; }
+    if (!empty($f['q'])) {
+        $w[] = '(code LIKE ? OR name LIKE ? OR company LIKE ? OR email LIKE ? OR tel LIKE ? OR address LIKE ? OR ship_address LIKE ? OR admin_memo LIKE ?'
+             . ' OR id IN (SELECT order_id FROM order_items WHERE name LIKE ? OR model_number LIKE ?))';
+        for ($i = 0; $i < 10; $i++) { $a[] = '%' . $f['q'] . '%'; }
+    }
+    $sql = 'FROM orders WHERE ' . implode(' AND ', $w);
+    $st = kv_db()->prepare('SELECT COUNT(*) ' . $sql); $st->execute($a); $total = (int)$st->fetchColumn();
+    $st = kv_db()->prepare('SELECT * ' . $sql . ' ORDER BY id DESC LIMIT ' . $per . ' OFFSET ' . ((max(1, $page) - 1) * $per)); $st->execute($a);
+    return ['items' => $st->fetchAll(), 'total' => $total, 'page' => max(1, $page), 'per' => $per, 'pages' => (int)ceil($total / $per)];
+}
+
+/**
+ * メールの一括送信（おちゃのこネットの「メールマネジメントの一括送信」と同じ）。
+ * テンプレートを読み込み、件名・本文を直して、埋め込みタグ（{name} など）は1通ずつ各受注の内容に置き換えて送る。
+ * 「〇完了にする」にチェックすると、送ったあと処理状況も完了にする。内容を確認する → 送信する の2段。
+ */
+function kv_admin_bcompose(): void
+{
+    $ids = array_values(array_filter(array_map('intval', explode(',', (string)($_REQUEST['ids'] ?? ''))), fn($i) => $i > 0 && kv_order($i)));
+    $back = (string)($_REQUEST['back'] ?? '?a=orders');
+    if (strpos($back, '?') !== 0) { $back = '?a=orders'; }
+    $all = kv_mail_templates_all();
+    $tpl = (string)($_REQUEST['tpl'] ?? 'flag_other');
+    if (!isset($all[$tpl])) { $tpl = 'flag_other'; }
+    [$subj, $body] = kv_mail_template($tpl);
+    $kind = $all[$tpl]['kind'];
+    $cc = kv_shop('email'); $done = $kind; $err = '';
+    $step = 'edit';
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && kv_csrf_ok()) {
+        $subj = (string)$_POST['subject']; $body = str_replace("\r\n", "\n", (string)$_POST['body']);
+        $cc = trim((string)$_POST['cc']); $kind = (string)($_POST['kind'] ?? $kind); $done = (string)($_POST['done'] ?? '');
+        if (trim($subj) === '' || trim($body) === '') { $err = '件名と本文を入れてください。'; }
+        elseif (strpos($body, '〇') !== false && empty($_POST['force'])) { $err = '本文に「〇」が残っています（納期などの書き換え忘れ）。直すか「〇のまま送る」にチェックしてください。'; }
+        elseif (($_POST['step'] ?? '') === 'send') {
+            $n = 0;
+            foreach ($ids as $id) {
+                $o = kv_order($id);
+                if (!$o || !$o['email']) { continue; }
+                [$s1, $b1] = kv_mail_render_text($id, $subj, $body);
+                if (kv_mail_send_text($id, (string)$o['email'], $cc, $s1, $b1, $kind)) { $n++; }
+                if (isset(KV_FLAGS[$done]) && (int)$o['f_' . $done] !== 1) { kv_order_flag($id, $done, true, false); }
+            }
+            header('Location: ' . $back . '&mailed=' . $n); exit;
+        } else { $step = 'confirm'; }
+    }
+    kv_head('メール一括送信', '', '/admin', ['noindex' => true]);
+    echo '<div class="wrap" style="max-width:960px">';
+    kv_admin_nav('orders');
+    echo '<nav class="crumb"><a href="' . kv_e($back) . '">受注一覧と明細</a> › メール一括送信</nav><h1>メール一括送信（' . count($ids) . '件）</h1>';
+    if (!$ids) { echo '<p>受注が選ばれていません。<a href="' . kv_e($back) . '">戻る</a></p></div>'; kv_footer(); return; }
+    if ($err) { echo '<div class="alert">' . kv_e($err) . '</div>'; }
+    $to = array_map(fn($i) => kv_order($i), $ids);
+    echo '<p class="src">宛先：' . kv_e(implode('、', array_map(fn($o) => $o['code'] . ' ' . $o['name'], $to))) . '</p>';
+    $hidden = '<input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '"><input type="hidden" name="ids" value="' . kv_e(implode(',', $ids)) . '">'
+            . '<input type="hidden" name="back" value="' . kv_e($back) . '"><input type="hidden" name="tpl" value="' . kv_e($tpl) . '">';
+    if ($step === 'confirm') {
+        [$ps, $pb] = kv_mail_render_text($ids[0], $subj, $body);
+        echo '<div class="panel"><b>内容の確認</b>（1件目 ' . kv_e($to[0]['code']) . ' に差し込んだ例。ほかの受注にもそれぞれの内容が入ります）'
+           . '<p>件名：<b>' . kv_e(kv_mail_subject($ps)) . '</b></p><p class="src">Cc：' . kv_e($cc ?: 'なし') . '　送ったあと：' . kv_e(KV_FLAGS[$done] ?? '') . (isset(KV_FLAGS[$done]) ? 'を完了にする' : '処理状況は変えない') . '</p>'
+           . '<pre style="white-space:pre-wrap;font-size:13px;background:#f7f9fb;border:1px solid #e3e9ee;border-radius:8px;padding:10px">' . kv_e($pb) . '</pre>'
+           . '<form method="post">' . $hidden;
+        foreach (['subject' => $subj, 'body' => $body, 'cc' => $cc, 'kind' => $kind, 'done' => $done, 'force' => $_POST['force'] ?? ''] as $k => $v) { echo '<input type="hidden" name="' . $k . '" value="' . kv_e($v) . '">'; }
+        echo '<button class="btn" name="step" value="send">' . count($ids) . '件に送信する</button> <button class="btn gray" name="step" value="edit">戻って直す</button></form></div></div>';
+        kv_footer(); return;
+    }
+    echo '<form method="get" class="filters"><input type="hidden" name="a" value="bcompose"><input type="hidden" name="ids" value="' . kv_e(implode(',', $ids)) . '"><input type="hidden" name="back" value="' . kv_e($back) . '">'
+       . '<span class="src">メールテンプレート：</span><select name="tpl" style="padding:7px;border:2px solid #cfdae4;border-radius:8px">';
+    foreach ($all as $k => $t) { echo '<option value="' . $k . '"' . ($k === $tpl ? ' selected' : '') . '>' . kv_e(KV_FLAGS[$t['kind']] ?? '') . '：' . kv_e($t['label']) . '</option>'; }
+    $in = 'width:100%;padding:8px;border:2px solid #cfdae4;border-radius:8px;box-sizing:border-box';
+    echo '</select> <button class="btn gray" type="submit">読み込む</button></form>'
+       . '<form method="post" class="panel">' . $hidden . '<input type="hidden" name="kind" value="' . kv_e($kind) . '">'
+       . '<label class="src">Cc（店の控え。要らなければ空に）</label><input name="cc" value="' . kv_e($cc) . '" style="' . $in . '">'
+       . '<label class="src" style="display:block;margin-top:8px">件名（先頭に [' . kv_e(kv_shop('name')) . '] が自動で付きます）</label><input name="subject" value="' . kv_e($subj) . '" style="' . $in . '">'
+       . '<label class="src" style="display:block;margin-top:8px">本文（{name} {code} {items} {total} などの埋め込みタグは、受注ごとの内容に置き換わります）</label>'
+       . '<textarea name="body" rows="20" style="' . $in . ';font-family:ui-monospace,monospace;font-size:13px">' . kv_e($body) . '</textarea>'
+       . '<p>状態（メールマネジメント）：<select name="done" style="padding:6px;border:2px solid #cfdae4;border-radius:8px"><option value="">変えない</option>';
+    foreach (KV_FLAGS as $k => $lb) { echo '<option value="' . $k . '"' . ($k === $done ? ' selected' : '') . '>' . $lb . '完了にする</option>'; }
+    echo '</select>' . ($err && strpos($err, '〇') !== false ? ' <label class="src"><input type="checkbox" name="force" value="1"> 〇のまま送る</label>' : '') . '</p>'
+       . '<p><button class="btn" type="submit" name="step" value="confirm">内容を確認する</button> <a class="btn gray" href="' . kv_e($back) . '">戻る</a></p></form></div>';
+    kv_footer();
+}
 
 function kv_admin_order(): void
 {
@@ -425,77 +569,132 @@ function kv_admin_new(): void
  */
 function kv_admin_compose(): void
 {
-    $id = (int)($_GET['id'] ?? 0);
+    // おちゃのこネットの「メールマネジメント」のメール送信画面と同じ流れ:
+    // テンプレートを選んで「読み込む」→ 件名・本文を直す →「内容を確認する」→「送信する」。送るとその区分のメールアイコンに青いチェック。
+    $id = (int)($_REQUEST['id'] ?? 0);
     $o = kv_order($id);
     if (!$o) { http_response_code(404); echo '受注が見つかりません'; return; }
-    $tpl = (string)($_GET['tpl'] ?? 'flag_other');
-    if (!isset(kv_mail_defaults()[$tpl])) { $tpl = 'flag_other'; }
-    $err = '';
+    $all = kv_mail_templates_all();
+    $tpl = (string)($_REQUEST['tpl'] ?? 'flag_other');
+    if (!isset($all[$tpl])) { $tpl = 'flag_other'; }
+    $back = (string)($_REQUEST['back'] ?? '');
+    $back = strpos($back, '?') === 0 ? $back : '?a=order&id=' . $id;
+    $kind = $all[$tpl]['kind'];
+    $err = ''; $step = 'edit';
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && kv_csrf_ok()) {
         $to = trim((string)($_POST['to'] ?? '')); $cc = trim((string)($_POST['cc'] ?? ''));
         $subj = trim((string)($_POST['subject'] ?? '')); $body = str_replace("\r\n", "\n", (string)($_POST['body'] ?? ''));
+        $done = (string)($_POST['done'] ?? ''); $kind = (string)($_POST['kind'] ?? $kind);
         $valid = fn(string $s) => $s === '' || array_reduce(array_map('trim', explode(',', $s)), fn($c, $a) => $c && filter_var($a, FILTER_VALIDATE_EMAIL), true);
         if ($to === '' || !$valid($to) || !$valid($cc)) { $err = '宛先・Cc のメールアドレスを確かめてください（複数はカンマ区切り）。'; }
         elseif ($subj === '' || trim($body) === '') { $err = '件名と本文を入れてください。'; }
         elseif (strpos($body, '〇') !== false && empty($_POST['force'])) { $err = '本文に「〇」が残っています（納期などの書き換え忘れ）。直すか、このまま送るなら「〇のまま送る」にチェックしてください。'; }
-        else {
-            $ok = kv_mail_send_text($id, $to, $cc, $subj, $body);
-            header('Location: ?a=order&id=' . $id . '&mailed=' . ($ok ? '1' : '0'));
+        elseif (($_POST['step'] ?? '') === 'send') {
+            $ok = kv_mail_send_text($id, $to, $cc, $subj, $body, $kind);
+            if ($ok && isset(KV_FLAGS[$done]) && (int)$o['f_' . $done] !== 1) { kv_order_flag($id, $done, true, false); }
+            header('Location: ' . $back . (strpos($back, '?') !== false ? '&' : '?') . 'mailed=' . ($ok ? '1' : '0'));
             exit;
-        }
+        } elseif (($_POST['step'] ?? '') === 'confirm') { $step = 'confirm'; }
     } else {
         [$subj, $body] = kv_mail_render($id, $tpl);
         $to = (string)$o['email']; $cc = kv_shop('email');
+        $done = (int)($o['f_' . $kind] ?? 1) === 1 ? '' : $kind;   // その区分がまだ未完了なら、送ったら完了にする
     }
-    kv_head('メールを送る', '', '/admin', ['noindex' => true]);
+    kv_head('メール送信', '', '/admin', ['noindex' => true]);
     echo '<div class="wrap" style="max-width:900px">';
     kv_admin_nav('orders');
-    echo '<nav class="crumb"><a href="?a=orders">受注一覧</a> › <a href="?a=order&id=' . $id . '">' . kv_e($o['code']) . '</a> › メールを送る</nav><h1>メールを送る</h1>';
+    echo '<nav class="crumb"><a href="?a=orders">受注一覧と明細</a> › <a href="?a=order&id=' . $id . '">' . kv_e($o['code']) . '</a> › メール送信</nav>'
+       . '<h1>メール送信（' . kv_e(KV_FLAGS[$kind] ?? 'その他') . '）</h1>';
     if ($err) { echo '<div class="alert">' . kv_e($err) . '</div>'; }
-    echo '<form method="get" class="filters"><input type="hidden" name="a" value="compose"><input type="hidden" name="id" value="' . $id . '">'
-       . '<span class="src">テンプレート：</span><select name="tpl" style="padding:7px;border:2px solid #cfdae4;border-radius:8px">';
-    foreach (kv_mail_labels() as $k => $label) { echo '<option value="' . $k . '"' . ($k === $tpl ? ' selected' : '') . '>' . kv_e($label) . '</option>'; }
-    echo '</select> <button class="btn gray" type="submit">このテンプレートで作り直す</button></form>';
+    $hidden = '<input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '"><input type="hidden" name="id" value="' . $id . '">'
+            . '<input type="hidden" name="tpl" value="' . kv_e($tpl) . '"><input type="hidden" name="back" value="' . kv_e($back) . '"><input type="hidden" name="kind" value="' . kv_e($kind) . '">';
+    if ($step === 'confirm') {
+        echo '<div class="panel"><b>内容の確認</b><table class="ftbl" style="width:100%;margin-top:6px">'
+           . '<tr><th>宛先</th><td>' . kv_e($o['name']) . '（' . kv_e($to) . '）</td></tr><tr><th>Cc</th><td>' . kv_e($cc ?: 'なし') . '</td></tr>'
+           . '<tr><th>件名</th><td><b>' . kv_e(kv_mail_subject($subj)) . '</b></td></tr>'
+           . '<tr><th>送ったあと</th><td>' . (isset(KV_FLAGS[$done]) ? kv_e(KV_FLAGS[$done]) . 'を完了にする' : '処理状況は変えない') . '</td></tr></table>'
+           . '<pre style="white-space:pre-wrap;font-size:13px;background:#f7f9fb;border:1px solid #e3e9ee;border-radius:8px;padding:10px">' . kv_e($body) . '</pre>'
+           . '<form method="post" action="?a=compose">' . $hidden;
+        foreach (['to' => $to, 'cc' => $cc, 'subject' => $subj, 'body' => $body, 'done' => $done, 'force' => $_POST['force'] ?? ''] as $k => $v) { echo '<input type="hidden" name="' . $k . '" value="' . kv_e($v) . '">'; }
+        echo '<button class="btn" name="step" value="send">送信する</button> <button class="btn gray" name="step" value="edit">戻って直す</button></form></div></div>';
+        kv_footer(); return;
+    }
+    echo '<form method="get" class="filters"><input type="hidden" name="a" value="compose"><input type="hidden" name="id" value="' . $id . '"><input type="hidden" name="back" value="' . kv_e($back) . '">'
+       . '<span class="src">メールテンプレート：</span><select name="tpl" style="padding:7px;border:2px solid #cfdae4;border-radius:8px">';
+    foreach ($all as $k => $t) { echo '<option value="' . $k . '"' . ($k === $tpl ? ' selected' : '') . '>' . kv_e(KV_FLAGS[$t['kind']] ?? '') . '：' . kv_e($t['label']) . '</option>'; }
+    echo '</select> <button class="btn gray" type="submit">読み込む</button></form>';
     $in = 'width:100%;padding:8px;border:2px solid #cfdae4;border-radius:8px;box-sizing:border-box';
-    echo '<form method="post" class="panel"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
+    echo '<form method="post" action="?a=compose" class="panel">' . $hidden
        . '<label class="src">宛先</label><input name="to" value="' . kv_e($to) . '" style="' . $in . '">'
        . '<label class="src" style="display:block;margin-top:8px">Cc（店の控え。要らなければ空に）</label><input name="cc" value="' . kv_e($cc) . '" style="' . $in . '">'
-       . '<label class="src" style="display:block;margin-top:8px">件名</label><input name="subject" value="' . kv_e($subj) . '" style="' . $in . '">'
+       . '<label class="src" style="display:block;margin-top:8px">件名（先頭に [' . kv_e(kv_shop('name')) . '] が自動で付きます）</label><input name="subject" value="' . kv_e($subj) . '" style="' . $in . '">'
        . '<label class="src" style="display:block;margin-top:8px">本文</label><textarea name="body" rows="24" style="' . $in . ';font-family:ui-monospace,monospace;font-size:13px">' . kv_e($body) . '</textarea>'
-       . ($err && strpos($err, '〇') !== false ? '<label class="src"><input type="checkbox" name="force" value="1"> 〇のまま送る</label>' : '')
-       . '<p><button class="btn" type="submit" onclick="return confirm(\'この内容で送信します。よろしいですか？\')">送信する</button> '
-       . '<a class="btn gray" href="?a=order&id=' . $id . '">送らずに戻る</a></p></form></div>';
+       . '<p>状態（メールマネジメント）：<select name="done" style="padding:6px;border:2px solid #cfdae4;border-radius:8px"><option value="">変えない</option>';
+    foreach (KV_FLAGS as $k => $lb) { echo '<option value="' . $k . '"' . ($k === $done ? ' selected' : '') . '>' . $lb . '完了にする</option>'; }
+    echo '</select>' . ($err && strpos($err, '〇') !== false ? ' <label class="src"><input type="checkbox" name="force" value="1"> 〇のまま送る</label>' : '') . '</p>'
+       . '<p><button class="btn" type="submit" name="step" value="confirm">内容を確認する</button> '
+       . '<a class="btn gray" href="' . kv_e($back) . '">送らずに戻る</a></p></form></div>';
     kv_footer();
 }
 
 function kv_admin_mail_templates(): void
 {
+    // おちゃのこネットの「メールテンプレート設定」と同じく、テンプレートごとに名前と区分（受注・発送・入金・その他）を持ち、自分で増やせる。
+    kv_order_schema();
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && kv_csrf_ok()) {
-        $st = kv_db()->prepare('INSERT OR REPLACE INTO mail_templates (key,subject,body) VALUES (?,?,?)');
+        if (!empty($_POST['delete']) && strpos((string)$_POST['delete'], 'custom_') === 0) {
+            kv_db()->prepare('DELETE FROM mail_templates WHERE key=?')->execute([(string)$_POST['delete']]);
+            header('Location: ?a=mail&saved=1'); exit;
+        }
+        if (!empty($_POST['new_label'])) {
+            $key = 'custom_' . substr(bin2hex(random_bytes(4)), 0, 8);
+            kv_db()->prepare('INSERT INTO mail_templates (key,subject,body,label,kind) VALUES (?,?,?,?,?)')
+                   ->execute([$key, (string)$_POST['new_subject'], str_replace("\r\n", "\n", (string)$_POST['new_body']), trim((string)$_POST['new_label']),
+                              isset(KV_FLAGS[$_POST['new_kind'] ?? '']) ? $_POST['new_kind'] : 'other']);
+            header('Location: ?a=mail&saved=1#' . $key); exit;
+        }
+        $st = kv_db()->prepare('INSERT OR REPLACE INTO mail_templates (key,subject,body,label,kind) VALUES (?,?,?,?,?)');
         foreach ((array)($_POST['subject'] ?? []) as $k => $s) {
-            $st->execute([$k, $s, (string)($_POST['body'][$k] ?? '')]);
+            $st->execute([$k, $s, str_replace("\r\n", "\n", (string)($_POST['body'][$k] ?? '')), trim((string)($_POST['label'][$k] ?? '')),
+                          isset(KV_FLAGS[$_POST['kind'][$k] ?? '']) ? $_POST['kind'][$k] : 'other']);
         }
         header('Location: ?a=mail&saved=1');
         exit;
     }
-    kv_head('メールテンプレート', '', '/admin', ['noindex' => true]);
+    kv_head('メールテンプレート設定', '', '/admin', ['noindex' => true]);
     echo '<div class="wrap" style="max-width:900px">';
     kv_admin_nav('mail');
-    echo '<h1>メールテンプレート</h1>';
+    echo '<h1>メールテンプレート設定</h1>';
     if (!empty($_GET['saved'])) { echo '<div class="note">保存しました。</div>'; }
-    echo '<p class="src">使える差し込み: {code} 受注番号 / {name} お名前 / {total} 合計 / {items} 明細 / {bank} 注文時の振込の案内 / {bank_account} 振込先の口座 / {next} 今後の流れ / {tracking} 送り状番号 / {pay_url} カードのお支払いページ / {shop} 店名 / {email} 店のメール</p>'
-       . '<p class="src">ここで直すのは「ひな形」です。1件ずつのメールは、受注明細の「メールを送る」で、送る前に件名・本文を直せます。</p>'
-       . '<form method="post"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">';
-    foreach (kv_mail_defaults() as $k => $d) {
+    echo '<p class="src">埋め込みタグ: {code} 受注番号 / {name} お名前 / {total} 合計 / {items} 明細 / {bank} 注文時の振込の案内 / {bank_account} 振込先の口座 / {next} 今後の流れ / {tracking} 送り状番号 / {pay_url} カードのお支払いページ / {shop} 店名 / {email} 店のメール</p>'
+       . '<p class="src">区分は、受注一覧のメールマネジメント（受注・発送・入金・その他）のどこに青いチェックが付くかです。件名の先頭には [' . kv_e(kv_shop('name')) . '] が自動で付きます。'
+       . '1件ずつのメールは、受注一覧のメールアイコンから、送る前に件名・本文を直せます。</p>';
+    $in = 'width:100%;padding:8px;border:2px solid #cfdae4;border-radius:8px;box-sizing:border-box';
+    $kindsel = function (string $name, string $now): string {
+        $h = '<select name="' . $name . '" style="padding:6px;border:2px solid #cfdae4;border-radius:8px">';
+        foreach (KV_FLAGS as $k => $lb) { $h .= '<option value="' . $k . '"' . ($k === $now ? ' selected' : '') . '>' . $lb . '</option>'; }
+        return $h . '</select>';
+    };
+    echo '<form method="post"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">';
+    foreach (kv_mail_templates_all() as $k => $t) {
         [$subj, $body] = kv_mail_template($k);
-        echo '<div class="panel"><b>' . kv_e(kv_mail_labels()[$k] ?? $k) . '</b> <span class="src">' . kv_e($k) . '</span>'
-           . '<label class="src" style="display:block;margin-top:8px">件名</label>'
-           . '<input name="subject[' . $k . ']" value="' . kv_e($subj) . '" style="width:100%;padding:8px;border:2px solid #cfdae4;border-radius:8px">'
+        $auto = in_array($k, ['order_received', 'order_paid_card'], true);
+        echo '<div class="panel" id="' . kv_e($k) . '"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+           . '<span class="src">名前</span><input name="label[' . $k . ']" value="' . kv_e($t['label']) . '" style="padding:6px;border:2px solid #cfdae4;border-radius:8px;min-width:260px">'
+           . '<span class="src">区分</span>' . $kindsel('kind[' . $k . ']', $t['kind'])
+           . ($auto ? ' <span class="tag">注文時に自動で送る</span>' : '')
+           . (strpos($k, 'custom_') === 0 ? ' <button class="btn gray" name="delete" value="' . kv_e($k) . '" onclick="return confirm(\'このテンプレートを消します\')">削除</button>' : '') . '</div>'
+           . '<label class="src" style="display:block;margin-top:8px">件名</label><input name="subject[' . $k . ']" value="' . kv_e($subj) . '" style="' . $in . '">'
            . '<label class="src" style="display:block;margin-top:8px">本文</label>'
-           . '<textarea name="body[' . $k . ']" rows="8" style="width:100%;padding:8px;border:2px solid #cfdae4;border-radius:8px;font-family:ui-monospace,monospace;font-size:13px">'
-           . kv_e($body) . '</textarea></div>';
+           . '<textarea name="body[' . $k . ']" rows="8" style="' . $in . ';font-family:ui-monospace,monospace;font-size:13px">' . kv_e($body) . '</textarea></div>';
     }
-    echo '<p><button class="btn" type="submit">保存する</button></p></form></div>';
+    echo '<p><button class="btn" type="submit">保存する</button></p></form>';
+    echo '<form method="post" class="panel"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '"><b>テンプレートを追加する</b>'
+       . '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px"><span class="src">名前</span><input name="new_label" required style="padding:6px;border:2px solid #cfdae4;border-radius:8px;min-width:260px" placeholder="例：納期遅れのお知らせ">'
+       . '<span class="src">区分</span>' . $kindsel('new_kind', 'other') . '</div>'
+       . '<label class="src" style="display:block;margin-top:8px">件名</label><input name="new_subject" value="ご連絡（{code}）" style="' . $in . '">'
+       . '<label class="src" style="display:block;margin-top:8px">本文</label><textarea name="new_body" rows="8" style="' . $in . ';font-family:ui-monospace,monospace;font-size:13px">' . kv_e("{name} 様\n\n\n\n{shop}\n{email}\n") . '</textarea>'
+       . '<p><button class="btn gray" type="submit">追加する</button></p></form></div>';
     kv_footer();
 }
 

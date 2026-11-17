@@ -30,6 +30,9 @@ function kv_clean_desc(string $html): string
 
 function kv_head(string $title, string $desc = '', string $path = '/', array $extra = []): void
 {
+    // 管理画面（admin.php は KV_ADMIN を定義する）は、お店の見た目を使わない（2026-11-17 ユーザー指示
+    // 「管理画面にお店のヘッダー・安さの理由・会社概要はいらない。表と裏は使う人が違うので、まったく違う画面に」）
+    if (defined('KV_ADMIN')) { kv_admin_head($title); return; }
     // canonical の置き場所。kv_config.php で KV_ORIGIN（例 https://www.exdirect.net）を決めていれば、
     // どのドメイン（www無し・デモのサブパス）で開いても正本のURLを指す（2026-11-15）
     $url = defined('KV_ORIGIN') ? rtrim(KV_ORIGIN, '/') . $path
@@ -287,8 +290,31 @@ function kv_common_faq_ld(): array
     return array_map(fn($x) => ['@type' => 'Question', 'name' => $x[0], 'acceptedAnswer' => ['@type' => 'Answer', 'text' => $x[1]]], kv_common_faq());
 }
 
+/** 管理画面の頭（お店のヘッダー・安さの理由・アクセス記録・OGPは出さない）。 */
+function kv_admin_head(string $title): void
+{
+    header('Content-Type: text/html; charset=utf-8');
+    header('X-Robots-Tag: noindex, nofollow');
+    echo '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+       . '<meta name="robots" content="noindex,nofollow"><title>' . kv_e($title) . '｜管理画面｜' . kv_e(kv_shop('name')) . '</title>'
+       . kv_css()
+       . '<style>body.adm{background:#eef1f5;color:#1b2733}'
+       . '.admbar{background:#1f2d3d;color:#fff}.admbar .inner{max-width:1320px;margin:0 auto;padding:10px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}'
+       . '.admbar .ttl{font-weight:800;font-size:16px;letter-spacing:.02em}.admbar .ttl small{font-weight:600;color:#9fb3c8;margin-left:8px;font-size:12px}'
+       . '.admbar .sp{flex:1}.admbar a{color:#cfe0f1;text-decoration:none;font-size:13px}.admbar a:hover{color:#fff;text-decoration:underline}'
+       . '.admnav{background:#fff;border-bottom:1px solid #d5dde6}.admnav .inner{max-width:1320px;margin:0 auto;padding:6px 16px;display:flex;flex-wrap:wrap;gap:4px 18px}'
+       . '.admnav .grp{display:flex;align-items:center;flex-wrap:wrap;gap:2px}.admnav .gl{font-size:11px;color:#6b7c8d;font-weight:700;margin-right:4px}'
+       . '.admnav a{display:inline-block;padding:6px 10px;border-radius:6px;color:#22384d;text-decoration:none;font-size:13.5px}'
+       . '.admnav a:hover{background:#eef3f8}.admnav a.now{background:#1f6fa8;color:#fff;font-weight:700}'
+       . 'body.adm .wrap{max-width:1320px}body.adm .panel{background:#fff}body.adm h1{font-size:22px;margin:6px 0 12px}body.adm .wrap:empty{display:none}</style>'
+       . '</head><body class="adm"><div class="admbar"><div class="inner"><span class="ttl">管理画面<small>' . kv_e(kv_shop('name')) . '</small></span>'
+       . '<span class="sp"></span>' . (!empty($_SESSION['kv_admin']) ? '<a href="' . kv_e(kv_url('')) . '" target="_blank" rel="noopener">お店を見る ↗</a>'
+       . '<a href="?a=manual">運営マニュアル</a><a href="?logout=1">ログアウト</a>' : '') . '</div></div>';
+}
+
 function kv_footer(): void
 {
+    if (defined('KV_ADMIN')) { echo '</body></html>'; return; }
     $cf = kv_common_faq();
     if ($cf) {
         // 開閉式で全ページに出す（ページを長くしない。中身は検索エンジン・AI も読める）
