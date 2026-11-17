@@ -106,6 +106,7 @@ h2{font-size:17px;margin:24px 0 8px}
 .card .pr small{font-size:11px;font-weight:500;color:#6b7a86}
 .panel{background:#fff;border:1px solid #e5ebf1;border-radius:12px;padding:18px;margin-bottom:16px}
 .note{background:#fffdf5;border:1px solid #e6d3a3;border-radius:10px;padding:14px;font-size:14px;margin:14px 0}
+.heavy{background:#fff6e6;border:2px solid #e8a33d;border-left-width:6px;border-radius:10px;padding:12px 14px;margin:14px 0;font-size:14px;line-height:1.7;color:#4a3410}.heavy b{display:block;font-size:15px;color:#9a5a00}.heavy p{margin:4px 0 0}
 .alert{background:#fdf6f6;border:1px solid #e0b4b4;border-radius:10px;padding:14px;font-size:14px;margin:14px 0}
 .src{font-size:12.5px;color:#6b7a86}
 .pager{display:flex;gap:6px;flex-wrap:wrap;margin:20px 0;font-size:14px}
@@ -240,6 +241,7 @@ function kv_common_faq(): array
         ['クレジットカードの情報は安全ですか？', 'カード決済は、決済会社Stripe（ストライプ）の決済画面で行います。当店はカード番号を受け取らず、保存もしません。通信はSSLで暗号化しています。'],
         ['先に代金を振り込む必要がありますか？', 'いいえ。ご注文のあと、メーカー・仕入先に在庫と納期を確認してから振込先をご案内します。在庫・納期をご確認いただいてからのお振込みです。'],
         ['領収書・見積書・請求書・納品書は発行できますか？', '発行できます。インボイス（適格請求書）に対応し、宛名・但し書きのご指定も承ります。商品は直送のため、書類はPDFでメールにてお送りします。大学・研究機関などの後払いにも対応しています。'],
+        ['重い商品は、どのように届きますか？', '重量物は車上渡しです。' . kv_heavy_text()],
         ['どんな会社が運営していますか？', '名古屋市の株式会社エクスブリッジ（2004年設立）が運営しています。東京大学・京都大学などの大学や研究機関にも納入しています。' . kv_common_faq_social(), $soc ? $soc['portal'] . '#ref=exdirect-faq' : ''],
         ['商品は正規品ですか？', 'メーカー・仕入先から直送する新品の正規品です。メーカー保証のある商品は、メーカーの保証が受けられます。'],
     ];
@@ -258,6 +260,22 @@ function kv_common_faq_social(): string
          . number_format((int)$soc['account']['followers']) . '人。党首・大臣を含む国会議員' . (int)$c['giin'] . '人、首長' . (int)$c['shucho'] . '人、'
          . 'フォロワー1万人を超えるインフルエンサー' . (int)$c['influencers'] . '人、企業' . (int)$c['companies'] . '社にフォローされています（'
          . date('Y年n月', strtotime($soc['built'])) . '時点）。フォローしてくださっている方々は「Kurage フォロワーポータル」で紹介しています。';
+}
+
+/**
+ * 重量物は車上渡し（2026-11-17 ユーザー指示「おちゃのこでは明記している。kvcartも目立つように」）。
+ * 文言はご利用案内・特商法表示の「重量物は、車上渡し(荷降し機が必要)」と同じ意味。商品ページ・カート・注文確認に出す。
+ */
+function kv_heavy_text(): string
+{
+    return '重い商品・大きな商品は、運送会社のトラックの荷台の上でのお渡し（車上渡し）になります。運転手は荷台から降ろしませんので、'
+         . 'お受け取りの場所で、フォークリフトなどの荷降ろし機（荷揚げ機）をご用意ください。';
+}
+
+function kv_heavy_note(): string
+{
+    if (!kv_is_xdirect()) { return ''; }
+    return '<div class="heavy"><b>重量物は「車上渡し」です（荷降ろし機が必要）</b><p>' . kv_e(kv_heavy_text()) . '</p></div>';
 }
 
 /** 共通のよくある質問の FAQPage 用の要素（トップ・メーカーページの構造化データに入れる）。 */

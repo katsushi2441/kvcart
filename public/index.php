@@ -600,6 +600,7 @@ function kv_page_product(int $id): void
         echo '<p><a class="btn" href="' . kv_url('contact') . '?pid=' . (int)$p['id'] . '">価格・納期を問い合わせる</a></p>';
     }
     echo '<p class="src" style="margin-top:12px">' . kv_e(kv_shop('ship_note')) . '</p>';
+    echo kv_heavy_note();
     echo '</div></div></div>';
     // 基本情報（AI・検索エンジンが拾いやすい表。事実だけ）
     $rows = [['メーカー', $mk ? '<a href="' . kv_url('product-group/' . (int)$mk['id']) . '">' . kv_e($mk['name']) . '</a>' : ''],
@@ -608,7 +609,8 @@ function kv_page_product(int $id): void
              ['価格', $incl !== null ? '税込' . number_format($incl) . '円（本体' . number_format((int)$p['price']) . '円）' : '価格・納期はお問い合わせください'],
              ['メーカー希望小売価格', $p['list_price'] && $incl !== null && (int)$p['list_price'] > (int)$p['price'] ? number_format((int)$p['list_price']) . '円' : ''],
              ['送料', kv_e(kv_shop('ship_note'))],
-             ['お届け', kv_is_xdirect() ? 'メーカー・仕入先から直送（在庫・納期を確認してからご連絡します）' : '']];
+             ['お届け', kv_is_xdirect() ? 'メーカー・仕入先から直送（在庫・納期を確認してからご連絡します）' : ''],
+             ['重量物', kv_is_xdirect() ? '車上渡し（荷降ろし機が必要）。' . kv_e(kv_heavy_text()) : '']];
     echo '<h2>基本情報</h2><div class="scroll"><table class="t spec">';
     foreach ($rows as [$k, $v]) { if ($v !== '') { echo '<tr><th>' . $k . '</th><td>' . $v . '</td></tr>'; } }
     echo '</table></div>';

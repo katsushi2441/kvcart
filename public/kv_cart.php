@@ -185,6 +185,7 @@ function kv_page_cart(): void
        . '<tr><th>消費税</th><td>' . number_format($r['tax']) . '円</td></tr>'
        . '<tr><th>税込合計</th><td><b style="font-size:18px">' . number_format($r['total']) . '円</b></td></tr></table>'
        . '<p class="src">' . kv_e(kv_shop('ship_note')) . '</p>'
+       . kv_heavy_note()
        . '<p style="text-align:right"><a class="btn" href="' . kv_url('cart/customer') . '">レジに進む</a></p>'
        . '</div></div>';
     kv_footer();
@@ -391,7 +392,7 @@ function kv_page_confirm(): void
     echo '<tr><th colspan="3">商品合計（税別）</th><td>' . number_format($r['subtotal']) . '円</td></tr>'
        . '<tr><th colspan="3">消費税</th><td>' . number_format($r['tax']) . '円</td></tr>'
        . '<tr><th colspan="3">税込合計</th><td><b>' . number_format($r['total']) . '円</b></td></tr>'
-       . '</table></div>';
+       . '</table></div>' . kv_heavy_note();
     $addr = ($c['zip'] ?? '') . ' ' . ($c['pref'] ?? '') . ($c['address1'] ?? '')
           . ($c['address2'] ?? '') . ' ' . ($c['address3'] ?? '');
     echo '<h2>ご購入者</h2><table class="formtbl">'
