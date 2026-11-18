@@ -92,6 +92,7 @@ function kv_stripe_send_invoice(int $oid): array
               . ' ' . number_format((int)$it['unit']) . '円 × ' . (int)$it['qty'];
         $lines[] = [mb_strimwidth($desc, 0, 480, '…'), (int)$it['amount']];
     }
+    if ((int)($o['discount'] ?? 0) > 0) { $lines[] = ['値引き', -(int)$o['discount']]; }
     if ((int)$o['tax'] > 0)      { $lines[] = ['消費税（10%）', (int)$o['tax']]; }
     if ((int)$o['shipping'] > 0) { $lines[] = ['送料（税込）', (int)$o['shipping']]; }
     $sum = array_sum(array_column($lines, 1));
@@ -156,6 +157,15 @@ function kv_stripe_checkout(int $oid): array
     }
     $sum = 0;
     foreach ($lines as $l) { $sum += $l['price_data']['unit_amount'] * $l['quantity']; }
+    // 値引きは Checkout の明細に負の金額を書けないので、1回限りのクーポンにする
+    $disc = (int)($o['discount'] ?? 0);
+    $discounts = [];
+    if ($disc > 0) {
+        $cp = kv_stripe_call('POST', '/coupons', ['amount_off' => $disc, 'currency' => 'jpy', 'duration' => 'once',
+                             'name' => '値引き（' . $o['code'] . '）', 'max_redemptions' => 1], 'kv-cp-' . $o['code'] . '-' . $disc);
+        $discounts = [['coupon' => $cp['id']]];
+        $sum -= $disc;
+    }
     if ($sum !== (int)$o['total']) {
         throw new RuntimeException('明細の合計（' . $sum . '円）が受注の合計（' . (int)$o['total'] . '円）と合いません');
     }
@@ -165,6 +175,7 @@ function kv_stripe_checkout(int $oid): array
     $s = kv_stripe_call('POST', '/checkout/sessions', [
         'mode' => 'payment',
         'line_items' => $lines,
+        'discounts' => $discounts,
         'customer_email' => $o['email'],
         'client_reference_id' => (string)$oid,
         'metadata' => ['kv_order_id' => (string)$oid, 'kv_order' => $o['code']],

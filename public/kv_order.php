@@ -65,6 +65,8 @@ function kv_order_schema(): void
         $up = true;
         $has = fn(string $t, string $c) => in_array($c, array_column(kv_db()->query("PRAGMA table_info($t)")->fetchAll(), 'name'), true);
         if (!$has('order_mails', 'kind'))    { kv_db()->exec('ALTER TABLE order_mails ADD COLUMN kind TEXT'); }
+        // 値引き（税別・10%対象から引く）。見積書どおりの金額に合わせるため（2026-11-18）
+        if (!$has('orders', 'discount'))     { kv_db()->exec('ALTER TABLE orders ADD COLUMN discount INTEGER DEFAULT 0'); }
         if (!$has('mail_templates', 'label')) { kv_db()->exec('ALTER TABLE mail_templates ADD COLUMN label TEXT'); }
         if (!$has('mail_templates', 'kind'))  { kv_db()->exec('ALTER TABLE mail_templates ADD COLUMN kind TEXT'); }
         // 区分を記録する前に送ったメールは、件名から区分を当てる
@@ -182,6 +184,31 @@ function kv_order_flag(int $oid, string $flag, bool $on, bool $send_mail = false
     if ($on && $send_mail) {
         kv_mail_send($oid, 'flag_' . $flag);
     }
+}
+
+/**
+ * 値引き（税別）を設定し、消費税と合計を計算し直す。値引きは10%対象の商品から引く（見積書の「値引き」行と同じ扱い）。
+ * 消費税 = 明細の消費税の合計 − 値引き×10%（四捨五入）、合計 = 小計 − 値引き + 消費税 + 送料。
+ */
+function kv_order_set_discount(int $oid, int $discount): array
+{
+    kv_order_schema();
+    $o = kv_order($oid);
+    if (!$o) { throw new RuntimeException('受注が見つかりません'); }
+    $discount = max(0, $discount);
+    $items = kv_order_items($oid);
+    $base10 = 0; $taxSum = 0;
+    foreach ($items as $it) {
+        $taxSum += (int)$it['tax'];
+        $is8 = (int)$it['amount'] > 0 && abs((int)$it['tax'] / (int)$it['amount'] - 0.08) < 0.01;
+        if (!$is8) { $base10 += (int)$it['amount']; }
+    }
+    if ($discount > $base10) { throw new RuntimeException('値引きが10%対象の商品の小計（' . number_format($base10) . '円）を超えています'); }
+    $tax = $taxSum - (int)round($discount * 0.1);
+    $total = (int)$o['subtotal'] - $discount + $tax + (int)$o['shipping'];
+    kv_db()->prepare('UPDATE orders SET discount=?, tax=?, total=? WHERE id=?')->execute([$discount, $tax, $total, $oid]);
+    kv_log($oid, 'edit', '値引き（税別）を ' . number_format($discount) . '円にしました（消費税 ' . number_format($tax) . '円・合計 ' . number_format($total) . '円）');
+    return kv_order($oid);
 }
 
 function kv_orders(array $f = [], int $page = 1, int $per = 30): array
@@ -370,8 +397,11 @@ function kv_mail_render_text(int $oid, string $subj, string $body): array
             (($mdl = kv_model_display($it['model_number'], $it['name'])) !== '' && mb_stripos($it['name'], $mdl) !== 0) ? ' (' . $mdl . ')' : '',
             (int)$it['qty'], number_format((int)$it['amount']));
     }
-    $items .= sprintf("\n小計 %s円 / 消費税 %s円 / 合計 %s円",
-        number_format((int)$o['subtotal']), number_format((int)$o['tax']), number_format((int)$o['total']));
+    $disc = (int)($o['discount'] ?? 0);
+    $items .= sprintf("\n小計 %s円%s / 消費税 %s円%s / 合計 %s円",
+        number_format((int)$o['subtotal']), $disc > 0 ? ' / 値引き -' . number_format($disc) . '円' : '',
+        number_format((int)$o['tax']), (int)$o['shipping'] > 0 ? ' / 送料 ' . number_format((int)$o['shipping']) . '円' : '',
+        number_format((int)$o['total']));
     $map = [
         '{code}' => $o['code'], '{name}' => $o['name'] ?: 'お客様',
         '{total}' => number_format((int)$o['total']), '{items}' => $items,

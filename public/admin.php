@@ -388,8 +388,11 @@ function kv_admin_order(): void
             $ship = (int)($_POST['shipping'] ?? 0);
             $st->execute([$_POST['name'], $_POST['company'], $_POST['email'], $_POST['tel'],
                 $_POST['zip'], $_POST['address'], $_POST['note'], $_POST['admin_memo'],
-                $_POST['tracking'], $ship, (int)$o['subtotal'] + (int)$o['tax'] + $ship, $id]);
+                $_POST['tracking'], $ship, (int)$o['subtotal'] - (int)($o['discount'] ?? 0) + (int)$o['tax'] + $ship, $id]);
             kv_log($id, 'edit', '受注内容を変更しました');
+        } elseif (isset($_POST['discount_save'])) {
+            try { kv_order_set_discount($id, (int)preg_replace('/[^0-9]/', '', (string)($_POST['discount'] ?? '0'))); }
+            catch (RuntimeException $e) { kv_log($id, 'edit', '値引きを設定できませんでした: ' . $e->getMessage()); }
         } elseif (isset($_POST['flag'])) {
             // メールは「編集して送る／そのまま送る／送らない」から選ぶ（おちゃのこネットと同じく、送る前に直せる・2026-11-17）
             $mode = (string)($_POST['send_mail'] ?? '');
@@ -486,11 +489,19 @@ function kv_admin_order(): void
            . '<td>' . (int)$it['qty'] . '</td>'
            . '<td>' . number_format((int)$it['amount']) . '円</td></tr>';
     }
+    $disc = (int)($o['discount'] ?? 0);
     echo '<tr><th colspan="4">小計（税抜）</th><td>' . number_format((int)$o['subtotal']) . '円</td></tr>'
+       . ($disc > 0 ? '<tr><th colspan="4">値引き（税抜）</th><td>-' . number_format($disc) . '円</td></tr>' : '')
        . '<tr><th colspan="4">消費税</th><td>' . number_format((int)$o['tax']) . '円</td></tr>'
        . '<tr><th colspan="4">送料</th><td>' . number_format((int)$o['shipping']) . '円</td></tr>'
        . '<tr><th colspan="4">合計（税込）</th><td><b>' . number_format((int)$o['total']) . '円</b></td></tr>'
-       . '</table></div></div>';
+       . '</table></div>'
+       // 値引き（見積書どおりの金額にする・2026-11-18）。税別で入れると消費税と合計を計算し直す
+       . '<form method="post" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">'
+       . '<input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
+       . '<span class="src">値引き（税抜）</span><input name="discount" inputmode="numeric" value="' . $disc . '" style="padding:6px;border:2px solid #cfdae4;border-radius:8px;width:140px">'
+       . '<span class="src">円</span><button class="btn gray" type="submit" name="discount_save" value="1">値引きを反映</button>'
+       . '<span class="src">消費税と合計を計算し直します。見積書の「値引き」と同じ税抜の金額を入れてください。</span></form></div>';
 
     // お客様情報の編集
     echo '<form method="post" class="panel"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
@@ -757,7 +768,7 @@ function kv_admin_csv(): void
     header('Content-Disposition: attachment; filename="orders_' . date('Ymd_His') . '.csv"');
     $out = fopen('php://output', 'w');
     $head = ['受注番号','受注日時','お名前','会社名','メール','電話','郵便番号','住所',
-             '支払方法','小計','消費税','送料','合計','受注','入金','発送','その他',
+             '支払方法','小計','値引き','消費税','送料','合計','受注','入金','発送','その他',
              'キャンセル','送り状番号','管理メモ','商品'];
     $put = function (array $row) use ($out) {
         fputcsv($out, array_map(fn($v) => mb_convert_encoding((string)$v, 'SJIS-win', 'UTF-8'), $row));
@@ -770,7 +781,7 @@ function kv_admin_csv(): void
         }
         $put([$o['code'], $o['created_at'], $o['name'], $o['company'], $o['email'], $o['tel'],
               $o['zip'], $o['address'], $o['payment'] === 'stripe' ? 'カード' : '振込',
-              $o['subtotal'], $o['tax'], $o['shipping'], $o['total'],
+              $o['subtotal'], (int)($o['discount'] ?? 0), $o['tax'], $o['shipping'], $o['total'],
               (int)$o['f_received'] ? '済' : '', (int)$o['f_paid'] ? '済' : '',
               (int)$o['f_shipped'] ? '済' : '', (int)$o['f_other'] ? '済' : '',
               (int)$o['cancelled'] ? 'キャンセル' : '', $o['tracking'], $o['admin_memo'],

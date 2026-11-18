@@ -190,6 +190,8 @@ function kv_doc_pdf(int $oid, string $type, array $opt = []): string
         $rate = ((int)$it['amount'] > 0 && abs((int)$it['tax'] / (int)$it['amount'] - 0.08) < 0.01) ? 8 : 10;
         $by[$rate] = ($by[$rate] ?? 0) + (int)$it['amount'];
     }
+    $disc = (int)($o['discount'] ?? 0);
+    if ($disc > 0) { $by[10] = ($by[10] ?? 0) - $disc; }
     $ship = (int)($o['shipping'] ?? 0);
     if ($ship > 0) { $by[10] = ($by[10] ?? 0) + (int)round($ship / 1.1); }
 
@@ -225,6 +227,7 @@ function kv_doc_pdf(int $oid, string $type, array $opt = []): string
         $rate = ((int)$it['amount'] > 0 && abs((int)$it['tax'] / (int)$it['amount'] - 0.08) < 0.01) ? 8 : 10;
         $rows[] = [kv_pdf_wrap($nm . ($rate === 8 ? ' ※' : ''), 9, 285, 3), (int)$it['qty'], (int)$it['unit'], (int)$it['amount']];
     }
+    if ($disc > 0) { $rows[] = [['値引き'], 1, -$disc, -$disc]; }
     if ($ship > 0) { $rows[] = [['送料'], 1, (int)round($ship / 1.1), (int)round($ship / 1.1)]; }
     $top1 = $type === 'receipt' ? 535 : 605; $topN = 735; $bottom = 200;
     $pages = []; $page = 1; $y = $top1; $c = '';
