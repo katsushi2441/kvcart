@@ -44,6 +44,9 @@ function kv_gshop_build(string $path): array
         foreach ($db->query('SELECT DISTINCT i.product_id FROM order_items i JOIN orders o ON o.id=i.order_id WHERE o.cancelled=0') as $r) { $sold[(string)$r['product_id']] = 1; }
     } catch (Throwable $e) { /* 受注の表がまだ無いショップ */ }
     $noimg = is_file(KV_DATA . '/gshop_noimage.json') ? (json_decode((string)file_get_contents(KV_DATA . '/gshop_noimage.json'), true) ?: []) : [];
+    // 商品ごとの上書き（2026-11-19）: kv_data/gshop_override.json = {"商品ID": {"image": "gimg/p123.jpg", "color": "ブラック"}}
+    // image は Merchant Center で「汎用的な画像」「画像に宣伝文」「画像が小さい」と不承認になった商品に、メーカー公式の大きい写真を使うため（店の商品ページの画像は変えない）
+    $ovr = is_file(KV_DATA . '/gshop_override.json') ? (json_decode((string)file_get_contents(KV_DATA . '/gshop_override.json'), true) ?: []) : [];
     $base = rtrim(defined('KV_ORIGIN') ? KV_ORIGIN : kv_site_url(''), '/');
     $tmp = $path . '.tmp';
     $fh = fopen($tmp, 'w');
@@ -59,6 +62,8 @@ function kv_gshop_build(string $path): array
         if (isset($noimg[$imgName])) { $skip['仮画像']++; continue; }
         $big = 'gimg/' . pathinfo($imgName, PATHINFO_FILENAME) . '.jpg';
         $img = is_file(__DIR__ . '/' . $big) ? $base . '/' . $big : kv_abs((string)$p['image_url']);
+        $ov = $ovr[(string)$p['id']] ?? [];
+        if (!empty($ov['image']) && is_file(__DIR__ . '/' . $ov['image'])) { $img = $base . '/' . $ov['image']; }
         if ($img !== kv_abs((string)$p['image_url'])) { $skip['拡大画像を使用']++; }
         $title = kv_gshop_text((string)$p['name'], 150);
         $mk = $makers[(int)$p['maker_id']] ?? '';
@@ -81,6 +86,7 @@ function kv_gshop_build(string $path): array
               . ($mdl !== '' ? '<g:mpn>' . $x($mdl) . '</g:mpn>' : '')
               . ($jan === '' && ($mdl === '' || $mk === '') ? '<g:identifier_exists>no</g:identifier_exists>' : '')
               . (!empty($gpc[(string)$p['id']]) ? '<g:google_product_category>' . $x($gpc[(string)$p['id']]) . '</g:google_product_category>' : '')
+              . (!empty($ov['color']) ? '<g:color>' . $x($ov['color']) . '</g:color>' : '')
               . (isset($cats[(int)$p['category_id']]) ? '<g:product_type>' . $x(($mk !== '' ? '' : '') . $cats[(int)$p['category_id']]) . '</g:product_type>' : '')
               . (isset($sold[(string)$p['id']]) ? '<g:custom_label_0>sold</g:custom_label_0>' : '<g:custom_label_0>unsold</g:custom_label_0>')
               // メーカーごとの納期（受注生産など）。Merchant Center の配送設定の準備日数より優先される
