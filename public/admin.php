@@ -140,7 +140,7 @@ function kv_admin_nav(string $now): void
 function kv_admin_orders(): void
 {
     // おちゃのこネットの「受注一覧と明細」に合わせる（おちゃのこネットの Web マニュアルを読んで合わせた・2026-11-17）:
-    //   - 右端の「メールマネジメント」に 受注・発送・入金・その他 の4区分。上段＝状態アイコン（押すと完了／取り消し）、
+    //   - 右端の「メールマネジメント」に 受注・入金・発送・その他 の4区分。上段＝状態アイコン（押すと完了／取り消し）、
     //     下段＝メールアイコン（押すとその区分のテンプレートを読み込んだメール送信画面。送ると青いチェック）
     //   - 左のチェックで複数選んで「〇完了にする」「メールを一括送信」「非表示にする」「取り出す」
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && kv_csrf_ok()) {
@@ -235,7 +235,8 @@ function kv_admin_orders(): void
        . '</div><div class="scroll"><table class="t mm"><tr><th rowspan="2"><input type="checkbox" onclick="for(const c of document.querySelectorAll(\'.oid\'))c.checked=this.checked"></th>'
        . '<th rowspan="2">受注日時</th><th rowspan="2">受注番号</th><th rowspan="2">購入者</th><th rowspan="2">合計金額</th><th rowspan="2">支払</th><th rowspan="2">詳細</th>'
        . '<th colspan="4" style="text-align:center;background:#fff1d6">メールマネジメント</th></tr><tr>';
-    $order4 = ['received' => '受注', 'shipped' => '発送', 'paid' => '入金', 'other' => 'その他'];
+    // 入金のあとに発送するので、受注・入金・発送・その他の順（2026-11-18 ユーザー指示。おちゃのこネットの並びからは変えた）
+    $order4 = ['received' => '受注', 'paid' => '入金', 'shipped' => '発送', 'other' => 'その他'];
     foreach ($order4 as $lb) { echo '<th class="mmh">' . $lb . '</th>'; }
     echo '</tr>';
     $cnt = kv_db()->prepare('SELECT COUNT(*) FROM orders WHERE lower(email)=lower(?) AND cancelled=0');
@@ -677,7 +678,7 @@ function kv_admin_compose(): void
 
 function kv_admin_mail_templates(): void
 {
-    // おちゃのこネットの「メールテンプレート設定」と同じく、テンプレートごとに名前と区分（受注・発送・入金・その他）を持ち、自分で増やせる。
+    // おちゃのこネットの「メールテンプレート設定」と同じく、テンプレートごとに名前と区分（受注・入金・発送・その他）を持ち、自分で増やせる。
     kv_order_schema();
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && kv_csrf_ok()) {
         if (!empty($_POST['delete']) && strpos((string)$_POST['delete'], 'custom_') === 0) {
@@ -705,7 +706,7 @@ function kv_admin_mail_templates(): void
     echo '<h1>メールテンプレート設定</h1>';
     if (!empty($_GET['saved'])) { echo '<div class="note">保存しました。</div>'; }
     echo '<p class="src">埋め込みタグ: {code} 受注番号 / {name} お名前 / {total} 合計 / {items} 明細 / {bank} 注文時の振込の案内 / {bank_account} 振込先の口座 / {next} 今後の流れ / {tracking} 送り状番号 / {pay_url} カードのお支払いページ / {shop} 店名 / {email} 店のメール</p>'
-       . '<p class="src">区分は、受注一覧のメールマネジメント（受注・発送・入金・その他）のどこに青いチェックが付くかです。件名の先頭には [' . kv_e(kv_shop('name')) . '] が自動で付きます。'
+       . '<p class="src">区分は、受注一覧のメールマネジメント（受注・入金・発送・その他）のどこに青いチェックが付くかです。件名の先頭には [' . kv_e(kv_shop('name')) . '] が自動で付きます。'
        . '1件ずつのメールは、受注一覧のメールアイコンから、送る前に件名・本文を直せます。</p>';
     $in = 'width:100%;padding:8px;border:2px solid #cfdae4;border-radius:8px;box-sizing:border-box';
     $kindsel = function (string $name, string $now): string {
