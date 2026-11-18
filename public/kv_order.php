@@ -191,7 +191,7 @@ function kv_orders(array $f = [], int $page = 1, int $per = 30): array
         $w[] = '(code LIKE ? OR name LIKE ? OR company LIKE ? OR email LIKE ? OR tel LIKE ? OR admin_memo LIKE ?)';
         for ($i = 0; $i < 6; $i++) { $a[] = '%' . $f['q'] . '%'; }
     }
-    if (isset($f['cancelled']) && $f['cancelled'] !== '') { $w[] = 'cancelled=?'; $a[] = (int)$f['cancelled']; }
+    if (in_array((string)($f['cancelled'] ?? ''), ['0', '1'], true)) { $w[] = 'cancelled=?'; $a[] = (int)$f['cancelled']; }
     $sql = 'FROM orders WHERE ' . implode(' AND ', $w);
     $st = kv_db()->prepare('SELECT COUNT(*) ' . $sql);
     $st->execute($a);

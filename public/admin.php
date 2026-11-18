@@ -168,7 +168,8 @@ function kv_admin_orders(): void
     $f = [
         'q' => trim((string)($_GET['q'] ?? '')),
         'from' => (string)($_GET['from'] ?? ''), 'to' => (string)($_GET['to'] ?? ''),
-        'cancelled' => (string)($_GET['cancelled'] ?? ''),
+        // キャンセルした受注は、指定がなければ出さない（2026-11-18 ユーザー指示）。「すべて」は all
+        'cancelled' => isset($_GET['cancelled']) ? (string)$_GET['cancelled'] : '0',
         'show_hidden' => !empty($_GET['show_hidden']),
     ];
     foreach (array_keys(KV_FLAGS) as $k) { $f['f_' . $k] = (string)($_GET['f_' . $k] ?? ''); }
@@ -209,8 +210,9 @@ function kv_admin_orders(): void
            . '<option value="0"' . ($f['f_' . $k] === '0' ? ' selected' : '') . '>未完了</option>'
            . '<option value="1"' . ($f['f_' . $k] === '1' ? ' selected' : '') . '>完了</option></select></div>';
     }
-    echo '<div><label class="src">キャンセル</label><select name="cancelled" style="' . $sel . '"><option value="">----</option>'
-       . '<option value="0"' . ($f['cancelled'] === '0' ? ' selected' : '') . '>キャンセル以外</option><option value="1"' . ($f['cancelled'] === '1' ? ' selected' : '') . '>キャンセルのみ</option></select></div>'
+    echo '<div><label class="src">キャンセル</label><select name="cancelled" style="' . $sel . '">'
+       . '<option value="0"' . ($f['cancelled'] === '0' ? ' selected' : '') . '>キャンセル以外</option><option value="1"' . ($f['cancelled'] === '1' ? ' selected' : '') . '>キャンセルのみ</option>'
+       . '<option value="all"' . (!in_array($f['cancelled'], ['0', '1'], true) ? ' selected' : '') . '>すべて</option></select></div>'
        . '<div><label class="src">支払い方法</label><select name="pay" style="' . $sel . '"><option value="">全て</option>'
        . '<option value="bank"' . (($_GET['pay'] ?? '') === 'bank' ? ' selected' : '') . '>銀行振込</option><option value="stripe"' . (($_GET['pay'] ?? '') === 'stripe' ? ' selected' : '') . '>クレジットカード</option></select></div>'
        . '<div><label class="src"><input type="checkbox" name="memo" value="1"' . (!empty($_GET['memo']) ? ' checked' : '') . '> 管理用メモに記入のある受注</label><br>'
@@ -283,7 +285,7 @@ function kv_orders_ex(array $f, int $page, int $per): array
     if ((string)$f['amax'] !== '') { $w[] = 'total<=?'; $a[] = (int)$f['amax']; }
     if (!empty($f['pay'])) { $w[] = 'payment=?'; $a[] = (string)$f['pay']; }
     if (!empty($f['memo'])) { $w[] = "COALESCE(admin_memo,'')<>''"; }
-    if (($f['cancelled'] ?? '') !== '') { $w[] = 'cancelled=?'; $a[] = (int)$f['cancelled']; }
+    if (in_array((string)($f['cancelled'] ?? ''), ['0', '1'], true)) { $w[] = 'cancelled=?'; $a[] = (int)$f['cancelled']; }
     if (!empty($f['q'])) {
         $w[] = '(code LIKE ? OR name LIKE ? OR company LIKE ? OR email LIKE ? OR tel LIKE ? OR address LIKE ? OR ship_address LIKE ? OR admin_memo LIKE ?'
              . ' OR id IN (SELECT order_id FROM order_items WHERE name LIKE ? OR model_number LIKE ?))';
