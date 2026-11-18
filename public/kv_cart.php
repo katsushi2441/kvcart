@@ -337,7 +337,8 @@ function kv_page_delivery(): void
        . '<div class="src" style="margin:4px 0 10px 24px">ご入金を確認してから発送します。振込手数料はお客様のご負担でお願いします。</div>';
     if (kv_stripe_ready()) {
         echo '<label><input type="radio" name="payment" value="stripe"> <b>クレジットカード</b></label>'
-           . '<div class="src" style="margin:4px 0 0 24px">「注文する」を押すと、カードのお支払い画面（Stripe）に進みます。</div>';
+           . '<div class="src" style="margin:4px 0 0 24px">「注文する」を押すと、カードのお支払い画面（Stripe）に進みます。'
+           . 'ご注文（カードのお支払い）の時点で決済が確定します。商品の出荷時ではありません。</div>';
     } else {
         echo '<div class="src">クレジットカード決済は準備中です。</div>';
     }
@@ -347,6 +348,22 @@ function kv_page_delivery(): void
        . '<p><a class="btn gray" href="' . kv_url('cart/customer') . '">戻る</a> '
        . '<button class="btn" type="submit">確認画面へ</button></p></form></div>';
     kv_footer();
+}
+
+/**
+ * カートの中の、納期が長い商品（メーカーの納期設定 maker_leadtime.json がある商品）。[[商品名, 納期の説明], ...]
+ * 確認画面で、納期の了承とカード決済がご注文時に確定することを示すため（2026-11-18 ユーザー指示）。
+ */
+function kv_cart_leadtime_lines(array $r): array
+{
+    $out = [];
+    foreach ($r['lines'] as $l) {
+        $p = $l['product'];
+        if (function_exists('kv_maker_leadtime') && ($lt = kv_maker_leadtime($p['maker_id'] ?? 0)) && trim((string)($lt['note'] ?? '')) !== '') {
+            $out[] = [(string)$p['name'], (string)$lt['note']];
+        }
+    }
+    return $out;
 }
 
 /** STEP 3: 確認 */
@@ -359,6 +376,11 @@ function kv_page_confirm(): void
     if (!$c || empty($c['payment'])) { header('Location: ' . kv_url('cart/delivery')); return; }
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!kv_csrf_ok()) { http_response_code(400); echo '不正なリクエストです'; return; }
+        // 納期の長い商品は、納期の了承が無ければ注文を受けない
+        if (kv_cart_leadtime_lines($r) && empty($_POST['leadtime_ok'])) {
+            header('Location: ' . kv_url('cart/confirm') . '?leadtime=1');
+            return;
+        }
         // カード払いは、ここでは注文を作らない。決済が終わってから注文にする（2026-11-18 ユーザー指示）。
         // カートと入力は決済が終わるまで残す（決済をやめても確認画面からやり直せる）
         if (($c['payment'] ?? '') === 'stripe' && kv_stripe_ready()) {
@@ -399,6 +421,8 @@ function kv_page_confirm(): void
     if (!empty($_GET['canceled'])) {
         echo '<div class="alert">カードのお支払いが完了していないため、ご注文はまだ確定していません。'
            . '内容をご確認のうえ、もう一度「注文する」を押してください。銀行振込に変えることもできます。</div>';
+    } elseif (!empty($_GET['leadtime'])) {
+        echo '<div class="alert">納期のかかる商品が含まれています。納期をご確認のうえ、「納期を了承しました」にチェックを入れてから「注文する」を押してください。</div>';
     } elseif (!empty($_GET['payerror'])) {
         echo '<div class="alert">カード決済の画面を開けませんでした。お手数ですが、もう一度お試しいただくか、銀行振込をお選びください。</div>';
     }
@@ -416,6 +440,16 @@ function kv_page_confirm(): void
        . '<tr><th colspan="3">消費税</th><td>' . number_format($r['tax']) . '円</td></tr>'
        . '<tr><th colspan="3">税込合計</th><td><b>' . number_format($r['total']) . '円</b></td></tr>'
        . '</table></div>' . kv_heavy_note();
+    $ltl = kv_cart_leadtime_lines($r);
+    $isCard = ($c['payment'] ?? 'bank') === 'stripe';
+    if ($ltl) {
+        echo '<div class="alert"><b>納期のかかる商品が含まれています</b><ul style="margin:6px 0 6px 18px">';
+        foreach ($ltl as [$nm, $note]) { echo '<li>' . kv_e($nm) . '<br><b>納期：' . kv_e($note) . '</b></li>'; }
+        echo '</ul>' . ($isCard
+            ? 'クレジットカードは、<b>ご注文（カードのお支払い）の時点で決済が確定します。商品の出荷時ではありません。</b>納期をご了承のうえ、ご注文ください。'
+            : 'ご入金を確認してからメーカーに手配します。納期をご了承のうえ、ご注文ください。')
+           . '</div>';
+    }
     $addr = ($c['zip'] ?? '') . ' ' . ($c['pref'] ?? '') . ($c['address1'] ?? '')
           . ($c['address2'] ?? '') . ' ' . ($c['address3'] ?? '');
     echo '<h2>ご購入者</h2><table class="formtbl">'
@@ -443,9 +477,11 @@ function kv_page_confirm(): void
        . '<a href="' . kv_url('privacy') . '" target="_blank" rel="noopener">プライバシーポリシー</a>'
        . 'に同意のうえご注文いただいたものとします。<br>'
        . (($c['payment'] ?? 'bank') === 'stripe'
-          ? '「注文する」を押すと、カードのお支払い画面に進みます。ご注文後、在庫と納期を確認してご連絡します。'
+          ? '「注文する」を押すと、カードのお支払い画面に進みます。お支払いが済んだ時点で、ご注文と決済が確定します（商品の出荷時ではありません）。ご注文後、在庫と納期を確認してご連絡します。'
           : 'ご注文後、在庫と納期を確認し、振込先とあわせてメールでご連絡します。')
        . '送料が必要な地域・商品の場合は、金額を訂正してご連絡します。</p>'
+       . ($ltl ? '<p><label style="font-weight:700"><input type="checkbox" name="leadtime_ok" value="1" required> 納期を了承しました'
+                 . ($isCard ? '（カードの決済はご注文時に確定します）' : '') . '</label></p>' : '')
        . '<p><a class="btn gray" href="' . kv_url('cart/delivery') . '">戻る</a> '
        . '<button class="btn" type="submit">注文する</button></p></form></div>';
     kv_footer();

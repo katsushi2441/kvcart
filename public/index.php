@@ -608,6 +608,7 @@ function kv_page_product(int $id): void
                                                    : '価格はお問い合わせください。ご希望の数量と送り先をお知らせいただければ、価格と納期をご案内します。'],
         [$label . 'の納期はどのくらいですか？', ($lt0 = kv_maker_leadtime($p['maker_id'])) && trim((string)($lt0['note'] ?? '')) !== ''
                 ? (string)$lt0['note'] . '。ご注文のあと、メーカーに確認した納期をメールでご連絡します。'
+                  . (function_exists('kv_stripe_ready') && kv_stripe_ready() ? 'クレジットカードの場合、決済はご注文の時点で確定します（商品の出荷時ではありません）。' : '')
                 : 'ご注文・お問い合わせのあと、メーカー・仕入先に在庫と納期を確認してメールでご連絡します。'],
     ];
     if (kv_is_xdirect()) { $pfaq[] = [$label . 'の送料はかかりますか？', kv_shop('ship_note')]; }
@@ -652,6 +653,9 @@ function kv_page_product(int $id): void
     }
     if ($incl !== null && ($lt = kv_maker_leadtime($p['maker_id'])) && trim((string)($lt['note'] ?? '')) !== '') {
         echo '<p class="src" style="color:#b45309;font-weight:700">納期：' . kv_e((string)$lt['note']) . '</p>';
+        if (function_exists('kv_stripe_ready') && kv_stripe_ready()) {
+            echo '<p class="src" style="color:#b45309">クレジットカードでお支払いの場合、決済はご注文の時点で確定します（商品の出荷時ではありません）。納期をご了承のうえ、ご注文ください。</p>';
+        }
     }
     if ($incl !== null && !kv_inquiry_only($p) && !kv_stock_orderable($p)) {
         // 在庫切れで注文を受け付けない設定のとき。カートの代わりに再入荷お知らせ（おちゃのこネットと同じ）
