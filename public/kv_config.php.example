@@ -32,6 +32,13 @@ $KV_SHOP = [
     // Google 広告（任意）。AW- で始まる ID と、購入のコンバージョンのラベル。両方あると注文完了で金額つきで計測する
     // 受注番号（6桁の連番）の最初の番号（任意）。前の店の受注番号の続きから始めるときに入れる
     'order_no_start' => '',
+    // 仕入先への発注書（任意）。担当者名と、メールの最後に付ける署名（改行は \n）
+    'po_staff' => '',
+    'po_signature' => '',
+    // 仕入れ値を自動で引く原価表の API（任意・kdbagent 互換: POST cmd=select&table=…&where[code]=型番、ヘッダー X-KDBA-Token）
+    'cost_api_url' => '',
+    'cost_api_token' => '',
+    'cost_api_table' => 'estimates',
     'google_ads_id' => '',
     'google_ads_purchase_label' => '',
     'zip'        => '',
