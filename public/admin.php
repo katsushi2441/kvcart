@@ -802,7 +802,7 @@ function kv_admin_csv(): void
     header('Content-Disposition: attachment; filename="orders_' . date('Ymd_His') . '.csv"');
     $out = fopen('php://output', 'w');
     $head = ['受注番号','受注日時','お名前','会社名','メール','電話','郵便番号','住所',
-             '支払方法','小計','値引き','消費税','送料','合計','受注','入金','発送','その他',
+             '支払方法','小計','値引き','消費税','送料','合計','売上確定日','受注','入金','発送','その他',
              'キャンセル','送り状番号','管理メモ','商品'];
     $put = function (array $row) use ($out) {
         fputcsv($out, array_map(fn($v) => mb_convert_encoding((string)$v, 'SJIS-win', 'UTF-8'), $row));
@@ -816,6 +816,8 @@ function kv_admin_csv(): void
         $put([$o['code'], $o['created_at'], $o['name'], $o['company'], $o['email'], $o['tel'],
               $o['zip'], $o['address'], $o['payment'] === 'stripe' ? 'カード' : '振込',
               $o['subtotal'], (int)($o['discount'] ?? 0), $o['tax'], $o['shipping'], $o['total'],
+              // 売上確定日（受注一覧の合計の下と同じ。銀行振込は入金確認日・カードは売上を確定した日）
+              ($capAt = kv_capture_at($o)) !== '' ? substr($capAt, 0, 16) : '',
               (int)$o['f_received'] ? '済' : '', (int)$o['f_paid'] ? '済' : '',
               (int)$o['f_shipped'] ? '済' : '', (int)$o['f_other'] ? '済' : '',
               (int)$o['cancelled'] ? 'キャンセル' : '', $o['tracking'], $o['admin_memo'],
