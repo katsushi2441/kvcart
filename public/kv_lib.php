@@ -182,7 +182,7 @@ function kv_category(int $id): ?array
 }
 
 /**
- * 直近1年に売れた商品（2026-11-19）。[商品ID => 注文回数]。
+ * 売れた商品（2026-11-19）。[商品ID => 点数]（直近1年の注文×10＋直近5年の注文）。
  * おちゃのこ時代の分は kv_data/sales_history.json、この店の注文は orders から足す。
  * 一覧・関連商品で売れた商品を先に並べ、店の中のリンクを売れる商品に集めるため
  * （検索の流入が売れない商品に偏り、売れる商品が弱かった。kvcart-sales/seo_sold_20261119）。
@@ -192,16 +192,22 @@ function kv_sold_counts(): array
     static $c = null;
     if ($c !== null) { return $c; }
     $c = [];
+    // 直近1年は重く（1回=10点）、直近5年は軽く（1回=1点）。5年分は kv_data/sold_rank_5y.json（{"商品ID": 回数}・
+    // kvcart-sales/seo_sold_20261119 でおちゃのこの全受注から作る・2026-11-19 ユーザー指示「4〜5年前でもさかのぼれるだけ」）
+    $f5 = __DIR__ . '/kv_data/sold_rank_5y.json';
+    if (is_file($f5)) {
+        foreach ((json_decode((string)file_get_contents($f5), true) ?: []) as $pid => $n) { $c[(int)$pid] = (int)$n; }
+    }
     $f = __DIR__ . '/kv_data/sales_history.json';
     if (is_file($f)) {
         $j = json_decode((string)file_get_contents($f), true);
-        foreach (($j['items'] ?? []) as $pid => $it) { $c[(int)$pid] = (int)($it['orders'] ?? 1); }
+        foreach (($j['items'] ?? []) as $pid => $it) { $c[(int)$pid] = ($c[(int)$pid] ?? 0) + 10 * (int)($it['orders'] ?? 1); }
     }
     try {
         $st = kv_db()->prepare('SELECT i.product_id pid, COUNT(DISTINCT o.id) n FROM order_items i JOIN orders o ON o.id=i.order_id'
                                . ' WHERE o.cancelled=0 AND o.created_at>=? GROUP BY i.product_id');
         $st->execute([date('Y-m-d', strtotime('-365 days'))]);
-        foreach ($st->fetchAll() as $r) { $c[(int)$r['pid']] = ($c[(int)$r['pid']] ?? 0) + (int)$r['n']; }
+        foreach ($st->fetchAll() as $r) { $c[(int)$r['pid']] = ($c[(int)$r['pid']] ?? 0) + 10 * (int)$r['n']; }
     } catch (Throwable $e) { /* 注文の表がまだ無い */ }
     return $c;
 }
