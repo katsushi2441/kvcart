@@ -259,8 +259,8 @@ function kv_admin_orders(): void
            . '<a href="?a=order&id=' . $id . '">' . kv_e($o['name']) . '</a>' . ($o['company'] ? '<div class="src">' . kv_e($o['company']) . '</div>' : '') . '</td>'
            . '<td rowspan="2" style="text-align:right;white-space:nowrap">' . number_format((int)$o['total']) . '円'
            // カードの売上確定日（2026-11-19 ユーザー指示「合計金額の下に売上確定日」）
-           . (($o['auth_status'] ?? '') === 'captured' && !empty($o['auth_done_at'])
-              ? '<div class="src" style="color:#14632f" title="売上確定 ' . kv_e(substr((string)$o['auth_done_at'], 0, 16)) . '">売上確定 ' . kv_e(date('n/j', strtotime((string)$o['auth_done_at']))) . '</div>' : '')
+           . (($capAt = kv_capture_at($o)) !== ''
+              ? '<div class="src" style="color:#14632f" title="売上確定 ' . kv_e(substr($capAt, 0, 16)) . '">売上確定 ' . kv_e(date('n/j', strtotime($capAt))) . '</div>' : '')
            . '</td>'
            . '<td rowspan="2" class="src">' . ($o['payment'] === 'stripe' ? 'カード' : '振込') . kv_auth_badge($o) . '</td>'
            . '<td rowspan="2"><a class="btn gray" href="?a=order&id=' . $id . '">明細</a></td>';

@@ -350,6 +350,18 @@ function kv_auth_badge(array $o): string
     return '<div><span class="tag" style="background:' . $lab[1] . '">' . $lab[0] . '</span></div>';
 }
 
+/**
+ * カードの売上確定の日時（受注一覧の合計の下に出す）。仮売上を確定した注文は確定した日時、
+ * 仮売上の仕組みより前（2026-11-19 まで）の注文時に確定していたカード注文は入金の日時。カードでなければ ''。
+ */
+function kv_capture_at(array $o): string
+{
+    if (($o['payment'] ?? '') !== 'stripe') { return ''; }
+    if (($o['auth_status'] ?? '') === 'captured') { return (string)($o['auth_done_at'] ?? ''); }
+    if (($o['auth_status'] ?? '') === '' && (int)($o['f_paid'] ?? 0) === 1) { return (string)($o['paid_at'] ?? ''); }
+    return '';
+}
+
 /** 売上を確定する。金額は今の受注の合計（値引きで減っていれば減らして確定。仮売上の額を超える増額はできない）。 */
 function kv_stripe_capture(int $oid): void
 {
