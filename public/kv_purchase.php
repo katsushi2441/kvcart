@@ -167,7 +167,7 @@ function kv_po_mail_body(array $o, array $sup, string $poNo, array $lines, strin
        . "出荷のご連絡（発送日・配送便・送り状No）は、このメールへの返信でお願いいたします。\n\n"
        . '発注No：' . $poNo . "\n";
     foreach ($lines as $l) { $b .= '商品：' . $l['name'] . '　数量：' . (int)$l['qty'] . "\n"; }
-    $b .= "お送り先：\n　" . trim($st['company'] . '　' . $st['name'] . ' 様') . "\n　〒" . kv_po_zip($st['zip']) . ' ' . $st['address'] . "\n" . ($st['tel'] !== '' ? '　電話 ' . $st['tel'] . "\n" : '');
+    $b .= "お送り先：\n　" . preg_replace('/^[\s　]+|[\s　]+$/u', '', $st['company'] . '　' . $st['name'] . ' 様') . "\n　〒" . kv_po_zip($st['zip']) . ' ' . $st['address'] . "\n" . ($st['tel'] !== '' ? '　電話 ' . $st['tel'] . "\n" : '');
     if (trim($comment) !== '') { $b .= "\n" . trim($comment) . "\n"; }
     $b .= "\nよろしくお願いいたします。\n";
     if (trim(kv_shop('po_signature')) !== '') { $b .= "\n" . str_replace('\n', "\n", kv_shop('po_signature')) . "\n"; }
