@@ -41,7 +41,13 @@ if (KV_BASE !== '' && strpos($path, KV_BASE) === 0) {
     $path = substr($path, strlen(KV_BASE));
 }
 $path = '/' . trim($path, '/');
-$page = max(1, (int)($_GET['p'] ?? 1));
+// おちゃのこネット時代の URL を、同じ中身のページとして出す（2026-11-18）。
+// 検索結果に残っているスマホ用の /phone/… と、/product-group/<ID>/0/photo?page=2 のような並べ替え付きの形。
+// リダイレクトはせず、そのまま表示する。canonical は各ページが /product/<ID> などの正規の形で出す。
+if (preg_match('#^/phone(/.*)?$#', $path, $m)) { $path = $m[1] ?? '/'; if ($path === '') { $path = '/'; } }
+if (preg_match('#^/(product-group|product-list)/(\d+)/.+$#', $path, $m)) { $path = '/' . $m[1] . '/' . $m[2]; }
+if ($path === '/category') { $path = '/makers'; }
+$page = max(1, (int)($_GET['p'] ?? ($_GET['page'] ?? 1)));
 
 try {
     kv_route($path, $page);
@@ -423,6 +429,22 @@ function kv_page_group(int $id, int $page): void
     kv_footer();
 }
 
+/** カテゴリのページの要約に使う事実（メーカー別の点数・価格の幅）。 */
+function kv_category_facts(int $id): array
+{
+    $db = kv_db();
+    $mk = $db->prepare('SELECT m.id, m.name, COUNT(*) AS n FROM products p JOIN makers m ON m.id=p.maker_id
+                         WHERE p.category_id=? AND p.hidden=0 GROUP BY m.id ORDER BY n DESC');
+    $mk->execute([$id]);
+    $pr = $db->prepare('SELECT MIN(NULLIF(price,0)) AS lo, MAX(price) AS hi, SUM(price IS NULL OR price=0) AS ask, COUNT(*) AS n
+                         FROM products WHERE category_id=? AND hidden=0');
+    $pr->execute([$id]);
+    $p = $pr->fetch() ?: [];
+    $rate = 1.10;
+    return ['makers' => $mk->fetchAll(), 'n' => (int)($p['n'] ?? 0), 'ask' => (int)($p['ask'] ?? 0),
+            'lo' => $p['lo'] ? (int)floor((int)$p['lo'] * $rate) : null, 'hi' => $p['hi'] ? (int)floor((int)$p['hi'] * $rate) : null];
+}
+
 function kv_page_category(int $id, int $page): void
 {
     $cat = kv_category($id);
@@ -435,16 +457,67 @@ function kv_page_category(int $id, int $page): void
         kv_footer();
         return;
     }
-    $name = $cat['name'] ?? 'カテゴリ';
-    kv_head($name . 'の商品一覧', $name . 'の取扱商品' . number_format($r['total']) . '点。',
-            '/product-list/' . $id);
+    $name = (string)($cat['name'] ?? 'カテゴリ');
+    $shop = kv_shop('name');
+    $fx = kv_category_facts($id);
+    $mkNames = array_map(fn($m) => (string)$m['name'], array_slice($fx['makers'], 0, 3));
+    $mkText = $mkNames ? implode('・', $mkNames) : '';
+    $allAsk = $fx['n'] > 0 && $fx['ask'] === $fx['n'];
+    $priceText = $allAsk ? '' : ($fx['lo'] !== null ? '税込' . number_format($fx['lo']) . '円〜' . number_format($fx['hi']) . '円' : '');
+    // 冒頭の要約（検索結果の説明文と AI の回答に使われやすい、事実だけの短い文）
+    $lead = $shop . 'では、' . $name . 'を' . number_format($r['total']) . '点取り扱っています。'
+          . ($mkText !== '' ? 'メーカーは' . $mkText . (count($fx['makers']) > 3 ? 'など' . count($fx['makers']) . '社' : '') . 'です。' : '')
+          . ($priceText !== '' ? '価格は' . $priceText . 'です。' : '')
+          . 'メーカー・仕入先からの直送で、送料は原則無料です。';
+    $title = $name . 'の通販' . ($mkText !== '' ? '（' . $mkText . '）' : '') . ' ' . number_format($r['total']) . '点'
+           . ($page > 1 ? '・' . $page . 'ページ目' : '');
+    $desc = mb_substr($lead, 0, 160);
+    $path = '/product-list/' . $id . ($page > 1 ? '?p=' . $page : '');
+    $faq = [
+        [$name . 'はどこで買えますか？', $shop . '（' . kv_origin() . '）で' . $name . 'を' . number_format($r['total']) . '点取り扱っています。'
+            . ($mkText !== '' ? $mkText . 'などのメーカーの商品があります。' : '')],
+        ['送料はかかりますか？', kv_shop('ship_note')],
+        ['納期はどのくらいですか？', 'ご注文・お問い合わせのあと、メーカー・仕入先に在庫と納期を確認してメールでご連絡します。'],
+        ['掲載されていない型番も買えますか？', '掲載していない型番も、お問い合わせいただければお見積もりします。'],
+    ];
+    $o = kv_origin();
+    $crumb = [['@type' => 'ListItem', 'position' => 1, 'name' => 'トップ', 'item' => $o . '/']];
+    $crumb[] = ['@type' => 'ListItem', 'position' => 2, 'name' => $name, 'item' => $o . '/product-list/' . $id];
+    $jsonld = ['@context' => 'https://schema.org', '@graph' => [
+        ['@type' => 'CollectionPage', 'name' => $name . 'の商品一覧', 'url' => $o . $path, 'description' => $desc,
+         'isPartOf' => ['@type' => 'WebSite', 'name' => $shop, 'url' => $o . '/']],
+        ['@type' => 'BreadcrumbList', 'itemListElement' => $crumb],
+        ['@type' => 'ItemList', 'numberOfItems' => (int)$r['total'], 'itemListElement' => array_values(array_map(
+            fn($q, $k) => ['@type' => 'ListItem', 'position' => ($page - 1) * 24 + $k + 1, 'url' => $o . '/product/' . (int)$q['id'], 'name' => (string)$q['name']],
+            $r['items'], array_keys($r['items'])))],
+        ['@type' => 'FAQPage', 'mainEntity' => array_merge(array_map(fn($x) => ['@type' => 'Question', 'name' => $x[0],
+            'acceptedAnswer' => ['@type' => 'Answer', 'text' => $x[1]]], $faq), kv_common_faq_ld())],
+    ]];
+    kv_head($title, $desc, $path, ['jsonld' => $jsonld]);
     echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a> › '
-       . ($cat['parent_name'] ?? '') . ($cat['parent_name'] ? ' › ' : '') . kv_e($name) . '</nav>'
-       . '<h1>' . kv_e($name) . '</h1>'
-       . '<p class="src">' . number_format($r['total']) . '点</p><div class="grid">';
+       . (!empty($cat['parent_name']) ? kv_e($cat['parent_name']) . ' › ' : '') . kv_e($name) . '</nav>'
+       . '<h1>' . kv_e($name) . 'の商品一覧</h1>';
+    if ($page === 1) {
+        echo '<p class="lead">' . kv_e($lead) . '</p>';
+        if ($fx['makers']) {
+            echo '<h2>' . kv_e($name) . 'のメーカー</h2><div class="makers">';
+            foreach ($fx['makers'] as $m) {
+                echo '<a href="' . kv_url('product-group/' . (int)$m['id']) . '">' . kv_e($m['name'])
+                   . ' <span class="src">' . number_format((int)$m['n']) . '</span></a>';
+            }
+            echo '</div>';
+        }
+        echo '<h2>' . kv_e($name) . 'の全商品</h2>';
+    }
+    echo '<p class="src">' . number_format($r['total']) . '点' . ($page > 1 ? '（' . $page . 'ページ目）' : '') . '</p><div class="grid">';
     foreach ($r['items'] as $p) { kv_card($p); }
     echo '</div>';
     kv_pager($r, kv_url('product-list/' . $id));
+    if ($page === 1) {
+        echo '<h2>' . kv_e($name) . 'についてよくある質問</h2><div class="faq">';
+        foreach ($faq as $x) { echo '<h3>' . kv_e($x[0]) . '</h3><p>' . kv_e($x[1]) . '</p>'; }
+        echo '</div>';
+    }
     echo '</div>';
     kv_footer();
 }
@@ -757,8 +830,14 @@ function kv_sitemap(): void
     $db = kv_db();
     $u = [];
     $u[] = ['/', (string)$db->query("SELECT MAX(updated_at) FROM products WHERE hidden=0")->fetchColumn()];
-    foreach ($db->query("SELECT id, updated_at FROM products WHERE hidden=0 ORDER BY id") as $r) {
-        $u[] = ['/product/' . (int)$r['id'], (string)$r['updated_at']];
+    // 仮画像（「画像はありません」等）は画像として伝えない（kv_data/gshop_noimage.json は Google ショッピングと共通）
+    $noimg = is_file(KV_DATA . '/gshop_noimage.json') ? (json_decode((string)file_get_contents(KV_DATA . '/gshop_noimage.json'), true) ?: []) : [];
+    foreach ($db->query("SELECT id, updated_at, image_url FROM products WHERE hidden=0 ORDER BY id") as $r) {
+        $im = (string)$r['image_url'];
+        $why = (string)($noimg[basename((string)parse_url($im, PHP_URL_PATH))] ?? '');
+        // 透かし・文字入りは Google ショッピングには出さないが、本物の商品写真なので画像検索には伝える
+        $ok = $im !== '' && ($why === '' || strpos($why, '透かし') !== false || strpos($why, '文字') !== false);
+        $u[] = ['/product/' . (int)$r['id'], (string)$r['updated_at'], $ok ? kv_abs($im) : ''];
     }
     foreach ($db->query("SELECT maker_id, MAX(updated_at) m FROM products WHERE hidden=0 AND maker_id IS NOT NULL GROUP BY maker_id") as $r) {
         $u[] = ['/product-group/' . (int)$r['maker_id'], (string)$r['m']];
@@ -775,10 +854,12 @@ function kv_sitemap(): void
     header('Content-Type: application/xml; charset=utf-8');
     $o = kv_origin();
     echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
-       . '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
-    foreach ($u as [$path, $mod]) {
+       . '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">' . "\n";
+    foreach ($u as $row) {
+        [$path, $mod] = $row; $img = $row[2] ?? '';
         echo '<url><loc>' . htmlspecialchars($o . $path, ENT_XML1) . '</loc>'
-           . ($mod !== '' ? '<lastmod>' . substr($mod, 0, 10) . '</lastmod>' : '') . "</url>\n";
+           . ($mod !== '' ? '<lastmod>' . substr($mod, 0, 10) . '</lastmod>' : '')
+           . ($img !== '' ? '<image:image><image:loc>' . htmlspecialchars($img, ENT_XML1) . '</image:loc></image:image>' : '') . "</url>\n";
     }
     echo "</urlset>\n";
 }
