@@ -85,11 +85,15 @@ function kv_order_create(array $cart, array $post): int
     kv_order_schema();
     $db = kv_db();
     $now = date('Y-m-d H:i:s');
-    // 受注番号は「日付-16進5桁」（1日あたり約105万通り）。同じ日に同じ番号を引いたら引き直す（2026-11-18）。
-    // 以前は引き直しが無く、重なると UNIQUE 制約で注文がエラーになっていた
+    // 受注番号は6桁の連番（2026-11-18 ユーザー指示「伝票で長いと困る。おちゃのこは6桁」）。
+    // 仕入先への発注No は「仕入先の記号＋受注番号」（例 SWA023783）。移行前の店の続きから始めるときは
+    // kv_config.php の shop.order_no_start に最初の番号を入れる（X-Direct は おちゃのこの最後 23782 の次の 23783）。
+    // 移行前の「日付-英数字」の受注番号は数字だけではないので数えない。同時に注文が来ても UNIQUE 制約と引き直しで重ならない
+    $start = max(1, (int)kv_shop('order_no_start'));
     $chk = $db->prepare('SELECT 1 FROM orders WHERE code=?');
+    $max = (int)$db->query("SELECT MAX(CAST(code AS INTEGER)) FROM orders WHERE code <> '' AND code NOT GLOB '*[^0-9]*'")->fetchColumn();
     for ($i = 0; $i < 20; $i++) {
-        $code = date('Ymd') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
+        $code = sprintf('%06d', max($start, $max + 1) + $i);
         $chk->execute([$code]);
         if (!$chk->fetchColumn()) { break; }
     }

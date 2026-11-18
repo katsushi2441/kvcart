@@ -30,6 +30,8 @@ $KV_SHOP = [
     // Google Merchant Center・Search Console の所有権確認タグの content（カンマ区切りで複数可）
     'google_site_verification' => '',
     // Google 広告（任意）。AW- で始まる ID と、購入のコンバージョンのラベル。両方あると注文完了で金額つきで計測する
+    // 受注番号（6桁の連番）の最初の番号（任意）。前の店の受注番号の続きから始めるときに入れる
+    'order_no_start' => '',
     'google_ads_id' => '',
     'google_ads_purchase_label' => '',
     'zip'        => '',
