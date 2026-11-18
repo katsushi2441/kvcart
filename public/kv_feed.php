@@ -37,6 +37,12 @@ function kv_gshop_build(string $path): array
     // Google の商品カテゴリ。おちゃのこネット時代のフィード（gfeed.xml）で商品ごとに付けていたものを引き継ぐ（kv_data/gshop_gpc.json: 商品ID => カテゴリ）
     $gpc = is_file(KV_DATA . '/gshop_gpc.json') ? (json_decode((string)file_get_contents(KV_DATA . '/gshop_gpc.json'), true) ?: []) : [];
     $cats = []; foreach ($db->query('SELECT id,name,parent_name FROM categories') as $c) { $cats[(int)$c['id']] = trim(($c['parent_name'] ? $c['parent_name'] . ' > ' : '') . $c['name']); }
+    // これまでに売れた商品（custom_label_0 = sold）。広告をこの印の商品だけに絞るため（2026-11-18）。
+    // 移行前のショップの受注は kv_data/sold_products.json（{"商品ID": 回数}）、移行後はこのシステムの受注（キャンセル除く）
+    $sold = is_file(KV_DATA . '/sold_products.json') ? (json_decode((string)file_get_contents(KV_DATA . '/sold_products.json'), true) ?: []) : [];
+    try {
+        foreach ($db->query('SELECT DISTINCT i.product_id FROM order_items i JOIN orders o ON o.id=i.order_id WHERE o.cancelled=0') as $r) { $sold[(string)$r['product_id']] = 1; }
+    } catch (Throwable $e) { /* 受注の表がまだ無いショップ */ }
     $noimg = is_file(KV_DATA . '/gshop_noimage.json') ? (json_decode((string)file_get_contents(KV_DATA . '/gshop_noimage.json'), true) ?: []) : [];
     $base = rtrim(defined('KV_ORIGIN') ? KV_ORIGIN : kv_site_url(''), '/');
     $tmp = $path . '.tmp';
@@ -44,7 +50,7 @@ function kv_gshop_build(string $path): array
     $x = fn($s) => htmlspecialchars((string)$s, ENT_XML1 | ENT_QUOTES, 'UTF-8');
     fwrite($fh, '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . '<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0"><channel>'
         . '<title>' . $x(kv_shop('name')) . '</title><link>' . $x($base . '/') . '</link><description>' . $x(kv_shop('tagline')) . "</description>\n");
-    $n = 0; $skip = ['画像なし' => 0, '仮画像' => 0, '拡大画像を使用' => 0];
+    $n = 0; $skip = ['画像なし' => 0, '仮画像' => 0, '拡大画像を使用' => 0, '売れた商品' => 0];
     $bo = date('Y-m-d', strtotime('+14 days')) . 'T00:00+0900';
     $st = $db->query("SELECT * FROM products WHERE hidden=0 AND price>0 AND COALESCE(price_unspecified,0)=0 ORDER BY id");
     while ($p = $st->fetch()) {
@@ -76,8 +82,10 @@ function kv_gshop_build(string $path): array
               . ($jan === '' && ($mdl === '' || $mk === '') ? '<g:identifier_exists>no</g:identifier_exists>' : '')
               . (!empty($gpc[(string)$p['id']]) ? '<g:google_product_category>' . $x($gpc[(string)$p['id']]) . '</g:google_product_category>' : '')
               . (isset($cats[(int)$p['category_id']]) ? '<g:product_type>' . $x(($mk !== '' ? '' : '') . $cats[(int)$p['category_id']]) . '</g:product_type>' : '')
+              . (isset($sold[(string)$p['id']]) ? '<g:custom_label_0>sold</g:custom_label_0>' : '<g:custom_label_0>unsold</g:custom_label_0>')
               . '<g:shipping><g:country>JP</g:country><g:price>0 JPY</g:price></g:shipping>'
               . "</item>\n";
+        if (isset($sold[(string)$p['id']])) { $skip['売れた商品']++; }
         fwrite($fh, $item);
         $n++;
     }
