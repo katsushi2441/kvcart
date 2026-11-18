@@ -85,7 +85,14 @@ function kv_order_create(array $cart, array $post): int
     kv_order_schema();
     $db = kv_db();
     $now = date('Y-m-d H:i:s');
-    $code = date('Ymd') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
+    // 受注番号は「日付-16進5桁」（1日あたり約105万通り）。同じ日に同じ番号を引いたら引き直す（2026-11-18）。
+    // 以前は引き直しが無く、重なると UNIQUE 制約で注文がエラーになっていた
+    $chk = $db->prepare('SELECT 1 FROM orders WHERE code=?');
+    for ($i = 0; $i < 20; $i++) {
+        $code = date('Ymd') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
+        $chk->execute([$code]);
+        if (!$chk->fetchColumn()) { break; }
+    }
     $db->beginTransaction();
     $ship_other = ($post['ship_to'] ?? 'same') === 'other';
     $st = $db->prepare('INSERT INTO orders (code,created_at,name,name_kana,company,department,email,tel,fax,'
