@@ -28,6 +28,7 @@ require __DIR__ . '/kv_cart.php';
 require __DIR__ . '/kv_admin_catalog.php';
 require __DIR__ . '/kv_admin_ops.php';
 require __DIR__ . '/kv_admin_stock.php';   // 在庫管理   // お問い合わせ受付一覧・ブラックリスト・帳票
+require __DIR__ . '/kv_purchase.php';   // 仕入先への発注書（2026-11-18）
 require __DIR__ . '/kv_pages.php';   // 運営マニュアルを管理画面の中で出すため
 
 kv_session();
@@ -40,6 +41,7 @@ if ($act === 'pcsv') { kv_admin_pcsv(); exit; }
 if ($act === 'ccsv') { kv_admin_ccsv(); exit; }
 if ($act === 'icsv') { kv_admin_icsv(); exit; }
 if ($act === 'doc')  { kv_admin_doc(); exit; }
+if ($act === 'popdf') { kv_admin_popdf(); exit; }
 if ($act === 'slcsv') { kv_admin_slcsv(); exit; }
 
 switch ($act) {
@@ -52,6 +54,8 @@ switch ($act) {
     case 'inquiry':   kv_admin_inquiry(); break;
     case 'blacklist': kv_admin_blacklist(); break;
     case 'stock':     kv_admin_stock(); break;
+    case 'po':        kv_admin_po(); break;          // 発注書（kv_purchase.php）
+    case 'suppliers': kv_admin_suppliers(); break;
     case 'stocklog':  kv_admin_stocklog(); break;
     case 'stockset':  kv_admin_stockset(); break;
     case 'restock':   kv_admin_restock(); break;
@@ -124,7 +128,7 @@ function kv_admin_nav(string $now): void
         '商品管理' => ['products' => '商品', 'price' => '価格の一括改定', 'pimport' => '商品CSV取り込み', 'makers' => 'メーカー',
                        'categories' => 'カテゴリ', 'plog' => '商品の変更履歴'],
         '在庫管理' => ['stock' => '在庫一括設定', 'stocklog' => '在庫数変更履歴', 'restock' => '再入荷お知らせ登録一覧', 'stockset' => '在庫表示・通知設定'],
-        '設定' => ['mail' => 'メールテンプレート設定', 'blacklist' => 'ブラックリスト設定', 'manual' => '運営マニュアル'],
+        '設定' => ['suppliers' => '仕入先', 'mail' => 'メールテンプレート設定', 'blacklist' => 'ブラックリスト設定', 'manual' => '運営マニュアル'],
     ];
     echo '</div><nav class="admnav"><div class="inner">';
     foreach ($groups as $g => $items) {
@@ -240,6 +244,7 @@ function kv_admin_orders(): void
     foreach ($order4 as $lb) { echo '<th class="mmh">' . $lb . '</th>'; }
     echo '</tr>';
     $cnt = kv_db()->prepare('SELECT COUNT(*) FROM orders WHERE lower(email)=lower(?) AND cancelled=0');
+    $poSent = kv_po_sent_counts(array_map(fn($x) => (int)$x['id'], $r['items']));
     foreach ($r['items'] as $o) {
         $id = (int)$o['id'];
         $cnt->execute([(string)$o['email']]); $n = (int)$cnt->fetchColumn();
@@ -247,7 +252,8 @@ function kv_admin_orders(): void
         echo '<tr' . ((int)$o['cancelled'] === 1 ? ' style="background:#fdf6f6"' : '') . '>'
            . '<td rowspan="2"><input class="oid" type="checkbox" name="ids[]" value="' . $id . '"></td>'
            . '<td rowspan="2" class="src" style="white-space:nowrap">' . kv_e(substr((string)$o['created_at'], 5, 11)) . '</td>'
-           . '<td rowspan="2"><a href="?a=order&id=' . $id . '">' . kv_e($o['code']) . '</a>' . ((int)$o['cancelled'] === 1 ? '<div class="src" style="color:#b3261e">キャンセル</div>' : '') . '</td>'
+           . '<td rowspan="2"><a href="?a=order&id=' . $id . '">' . kv_e($o['code']) . '</a>' . ((int)$o['cancelled'] === 1 ? '<div class="src" style="color:#b3261e">キャンセル</div>' : '')
+           . (!empty($poSent[$id]) ? '<div><span class="tag" style="background:#e8f0fe;color:#1a4d8f" title="発注書を送った数">発注済</span></div>' : '') . '</td>'
            . '<td rowspan="2">' . ($n >= 2 ? '<span class="tag" style="background:#e9f7ef;color:#14632f" title="購入回数">' . $n . '回</span> ' : '')
            . (!empty($o['bl_note']) ? '<span class="tag red" title="' . kv_e($o['bl_note']) . '">ブラックリスト</span> ' : '')
            . '<a href="?a=order&id=' . $id . '">' . kv_e($o['name']) . '</a>' . ($o['company'] ? '<div class="src">' . kv_e($o['company']) . '</div>' : '') . '</td>'
@@ -420,7 +426,9 @@ function kv_admin_order(): void
     if (!empty($o['bl_note'])) { echo '<div class="alert"><b>ブラックリストに一致：</b>' . kv_e($o['bl_note']) . '</div>'; }
     echo '<p class="src">IP ' . kv_e($o['ip'] ?? '') . '　<a href="?a=blacklist&email=' . rawurlencode((string)$o['email']) . '&name=' . rawurlencode((string)$o['name'])
        . '&tel=' . rawurlencode((string)$o['tel']) . '&ip=' . rawurlencode((string)($o['ip'] ?? '')) . '">この購入者をブラックリストに登録</a></p>';
+    if (isset($_GET['po_sent'])) { echo (int)$_GET['po_sent'] ? '<div class="note">発注書を送りました。</div>' : '<div class="alert">発注書を送れませんでした。宛先とメールの設定を確かめてください。</div>'; }
     echo kv_admin_doc_panel($o);
+    echo kv_admin_po_panel($o);
     if ((int)$o['cancelled'] === 1) { echo '<div class="alert">この受注はキャンセルされています。</div>'; }
 
     // 4系統チェック
