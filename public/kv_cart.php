@@ -472,6 +472,13 @@ function kv_page_complete(): void
            . '</table>'
            . '<p class="src">ご注文確認のメールを ' . kv_e($o['email']) . ' へお送りしました。'
            . '届かないときは迷惑メールフォルダをご確認のうえ、お問い合わせください。</p></div>';
+        // Google 広告の購入の計測（shop.google_ads_id と shop.google_ads_purchase_label があるとき）。
+        // 金額は税込の注文金額、transaction_id は受注番号（再読み込みしても Google 側で1件に数える）
+        $aw = trim((string)kv_shop('google_ads_id')); $lb = trim((string)kv_shop('google_ads_purchase_label'));
+        if ($aw !== '' && $lb !== '' && preg_match('/^AW-\d+$/', $aw)) {
+            echo '<script>if(window.gtag){gtag("event","conversion",' . json_encode(['send_to' => $aw . '/' . $lb,
+                 'value' => (int)$o['total'], 'currency' => 'JPY', 'transaction_id' => (string)$o['code']], JSON_UNESCAPED_SLASHES) . ');}</script>';
+        }
         if ($o['payment'] === 'stripe') {
             $o = kv_order((int)$oid);   // webhook で入金が付いていれば反映
             echo '<h2>カードでのお支払い</h2><div class="panel">';

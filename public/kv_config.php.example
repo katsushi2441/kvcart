@@ -29,6 +29,9 @@ $KV_SHOP = [
     'invoice_no' => '',
     // Google Merchant Center・Search Console の所有権確認タグの content（カンマ区切りで複数可）
     'google_site_verification' => '',
+    // Google 広告（任意）。AW- で始まる ID と、購入のコンバージョンのラベル。両方あると注文完了で金額つきで計測する
+    'google_ads_id' => '',
+    'google_ads_purchase_label' => '',
     'zip'        => '',
     'ship_note'=> '送料は商品ページの表記に従います。',
 ];

@@ -64,6 +64,13 @@ function kv_head(string $title, string $desc = '', string $path = '/', array $ex
     foreach (array_filter(array_map('trim', explode(',', kv_shop('google_site_verification')))) as $gv) {
         echo '<meta name="google-site-verification" content="' . kv_e($gv) . '">';
     }
+    // Google 広告のタグ（2026-11-18）。kv_config.php の shop.google_ads_id（AW-…）があるときだけ全ページに置く。
+    // 広告から来た人のクリック情報（gclid）を保存するため、購入の計測（注文完了ページ）とは別に全ページで必要
+    $aw = trim((string)kv_shop('google_ads_id'));
+    if ($aw !== '' && preg_match('/^AW-\d+$/', $aw)) {
+        echo '<script async src="https://www.googletagmanager.com/gtag/js?id=' . kv_e($aw) . '"></script>'
+           . '<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag("js",new Date());gtag("config",' . json_encode($aw) . ');</script>';
+    }
     // アクセス記録（2026-11-16）。人は JavaScript で simpletrack.php に知らせる（ほかのサイトと同じ形）。X-Direct のときだけ
     if (kv_is_xdirect()) {
         echo '<script>(function(){var s=document.createElement("script");s.src="' . kv_url('simpletrack.php')
