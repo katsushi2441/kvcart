@@ -258,7 +258,7 @@ function kv_admin_orders(): void
            . (!empty($o['bl_note']) ? '<span class="tag red" title="' . kv_e($o['bl_note']) . '">ブラックリスト</span> ' : '')
            . '<a href="?a=order&id=' . $id . '">' . kv_e($o['name']) . '</a>' . ($o['company'] ? '<div class="src">' . kv_e($o['company']) . '</div>' : '') . '</td>'
            . '<td rowspan="2" style="text-align:right;white-space:nowrap">' . number_format((int)$o['total']) . '円</td>'
-           . '<td rowspan="2" class="src">' . ($o['payment'] === 'stripe' ? 'カード' : '振込') . '</td>'
+           . '<td rowspan="2" class="src">' . ($o['payment'] === 'stripe' ? 'カード' : '振込') . kv_auth_badge($o) . '</td>'
            . '<td rowspan="2"><a class="btn gray" href="?a=order&id=' . $id . '">明細</a></td>';
         foreach (array_keys($order4) as $k) {
             $on = (int)$o['f_' . $k] === 1;
@@ -404,10 +404,21 @@ function kv_admin_order(): void
                    ->execute([(string)$_POST['cancel'] === '1' ? 1 : 0, $id]);
             // 在庫を戻す／取り消しなら減らし直す（kv_stock.php）
             if ((string)$_POST['cancel'] === '1' && !(int)$o['cancelled']) { kv_stock_apply_order($id, +1, '受注キャンセル'); }
+            // カードの仮売上が残っていれば取り消す（手数料はかからない・2026-11-19）
+            if ((string)$_POST['cancel'] === '1' && ($o['auth_status'] ?? '') === 'authorized') {
+                try { kv_stripe_cancel_auth($id, '受注キャンセル'); }
+                catch (RuntimeException $e) { kv_log($id, 'stripe', '仮売上を取り消せませんでした: ' . $e->getMessage()); }
+            }
             if ((string)$_POST['cancel'] !== '1' && (int)$o['cancelled']) { kv_stock_apply_order($id, -1, '受注キャンセルの取り消し'); }
             kv_log($id, 'cancel', (string)$_POST['cancel'] === '1' ? 'キャンセルしました' : 'キャンセルを取り消しました');
         } elseif (isset($_POST['sendmail'])) {
             kv_mail_send($id, (string)$_POST['sendmail']);
+        } elseif (isset($_POST['auth_capture'])) {
+            try { kv_stripe_capture($id); }
+            catch (RuntimeException $e) { kv_log($id, 'stripe', '売上を確定できませんでした: ' . $e->getMessage()); }
+        } elseif (isset($_POST['auth_cancel'])) {
+            try { kv_stripe_cancel_auth($id, '受注画面から'); }
+            catch (RuntimeException $e) { kv_log($id, 'stripe', '仮売上を取り消せませんでした: ' . $e->getMessage()); }
         } elseif (isset($_POST['stripe_invoice'])) {
             try { kv_stripe_send_invoice($id); }
             catch (RuntimeException $e) { kv_log($id, 'stripe', '請求書を送れませんでした: ' . $e->getMessage()); }
@@ -455,8 +466,27 @@ function kv_admin_order(): void
     }
     echo '</div></div>';
 
+    // カードの仮売上（2026-11-19）。在庫を確かめてから「売上を確定」、手配できなければ「仮売上を取り消す」
+    if (($o['auth_status'] ?? '') !== '') {
+        $stName = ['authorized' => '仮売上中', 'captured' => '売上確定', 'canceled' => '仮売上を取消', 'expired' => '仮売上の期限切れ'][$o['auth_status']] ?? $o['auth_status'];
+        echo '<form method="post" class="panel"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
+           . '<b>カードの仮売上（Stripe）</b> ' . kv_auth_badge($o)
+           . '<p>' . kv_e($stName) . '　仮売上 ' . number_format((int)$o['auth_amount']) . '円（' . kv_e(substr((string)$o['auth_at'], 0, 16)) . '）'
+           . (!empty($o['auth_done_at']) ? '　→ ' . kv_e(substr((string)$o['auth_done_at'], 0, 16)) : '') . '</p>';
+        if ($o['auth_status'] === 'authorized') {
+            $amt = (int)$o['total'];
+            echo '<p class="src">在庫と納期を確かめたら「売上を確定」を押してください。今の受注の合計（' . number_format($amt) . '円）で確定します。'
+               . '値引きなどで減らした場合は減らした額で確定し、残りは取り消されます（仮売上の額を超える増額はできません）。'
+               . 'カードの仮売上はおおむね7日で切れるので、それまでに確定してください。手配できない場合は「仮売上を取り消す」（手数料はかかりません）。</p>'
+               . '<button class="btn" type="submit" name="auth_capture" value="1" onclick="return confirm(\'' . number_format($amt) . '円で売上を確定します\')"'
+               . ($amt > (int)$o['auth_amount'] ? ' disabled title="仮売上の額を超えています"' : '') . '>売上を確定（' . number_format($amt) . '円）</button> '
+               . '<button class="btn gray" type="submit" name="auth_cancel" value="1" onclick="return confirm(\'仮売上を取り消します。お客様への請求は無くなります\')">仮売上を取り消す</button>';
+        }
+        echo '</form>';
+    }
+
     // カード払いの請求書（Stripe）。注文後に在庫・送料を確かめてから、確定した金額で送る
-    if ($o['payment'] === 'stripe' && kv_stripe_ready()) {
+    if ($o['payment'] === 'stripe' && kv_stripe_ready() && ($o['auth_status'] ?? '') === '') {
         $inv = kv_stripe_invoice_of($o);
         echo '<form method="post" class="panel"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
            . '<b>カード払いの請求書（Stripe）</b>';

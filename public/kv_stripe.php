@@ -180,7 +180,9 @@ function kv_stripe_checkout(int $oid): array
         'client_reference_id' => (string)$oid,
         'metadata' => ['kv_order_id' => (string)$oid, 'kv_order' => $o['code']],
         'payment_intent_data' => ['metadata' => ['kv_order_id' => (string)$oid, 'kv_order' => $o['code']],
-                                  'description' => kv_shop('name') . ' ご注文 ' . $o['code']],
+                                  'description' => kv_shop('name') . ' ご注文 ' . $o['code'],
+                                  // 仮売上（与信）にして、在庫を確かめてから受注画面で確定する（2026-11-19 ユーザー指示）
+                                  'capture_method' => 'manual'],
         // 本人認証（3D セキュア）を毎回求める（2026-11-17 ユーザー承認）。不正カードの負担をカード会社側に移す
         'payment_method_options' => ['card' => ['request_three_d_secure' => 'any']],
         'success_url' => $base . '/cart/complete',
@@ -264,6 +266,13 @@ function kv_stripe_handle(array $ev): string
         case 'checkout.session.async_payment_succeeded':
             // 後払い型の決済方法では completed の時点でまだ未払いのことがある。払い済みのときだけ入金にする
             if (!in_array($obj['payment_status'] ?? '', ['paid', 'no_payment_required'], true)) {
+                // 仮売上（capture_method=manual）は payment_status が unpaid のまま完了する
+                if (($o['auth_status'] ?? '') === '' && ($pi = kv_stripe_authorized($obj, (int)$o['total']))) {
+                    $GLOBALS['kv_risk_note'] = kv_stripe_risk_note($oid, (string)$pi['id']);
+                    kv_auth_record($oid, $pi);
+                    kv_mail_send($oid, 'order_paid_card');
+                    return 'authorized';
+                }
                 kv_log($oid, 'stripe', '決済の手続きは済みましたが、入金はまだです: ' . $obj['id']);
                 return 'completed but unpaid';
             }
@@ -293,6 +302,79 @@ function kv_stripe_handle(array $ev): string
             return 'voided logged';
     }
     return 'ignored: ' . ($ev['type'] ?? '');
+}
+
+
+/*
+ * カードの仮売上（2026-11-19）。決済画面は capture_method=manual で作るので、お客様が払い終えても
+ * PaymentIntent は requires_capture（仮売上）のまま。受注画面の「売上を確定」で capture、「仮売上を取り消す」か
+ * 受注のキャンセルで cancel する。カードの仮売上は約7日で切れるので、受注一覧に何日目かを出す。
+ */
+
+/** 決済画面が終わり、仮売上になっていれば PaymentIntent を返す（金額 $expect と一致するときだけ）。 */
+function kv_stripe_authorized(array $session, int $expect): ?array
+{
+    if (($session['status'] ?? '') !== 'complete' || empty($session['payment_intent'])) { return null; }
+    $pi = kv_stripe_call('GET', '/payment_intents/' . rawurlencode(is_array($session['payment_intent']) ? $session['payment_intent']['id'] : (string)$session['payment_intent']));
+    if (($pi['status'] ?? '') !== 'requires_capture' || (int)($pi['amount_capturable'] ?? -1) !== $expect) { return null; }
+    return $pi;
+}
+
+/** 受注に仮売上を記録する。 */
+function kv_auth_record(int $oid, array $pi): void
+{
+    kv_db()->prepare("UPDATE orders SET auth_status='authorized', auth_pi=?, auth_amount=?, auth_at=? WHERE id=?")
+           ->execute([(string)$pi['id'], (int)$pi['amount_capturable'], date('Y-m-d H:i:s'), $oid]);
+    kv_log($oid, 'stripe', 'カードの仮売上（与信）を確認しました: ' . $pi['id'] . ' ' . number_format((int)$pi['amount_capturable']) . '円');
+}
+
+/** 仮売上から何日目か（仮売上の当日を1日目）。仮売上中でなければ 0。 */
+function kv_auth_day(array $o): int
+{
+    if (($o['auth_status'] ?? '') !== 'authorized' || empty($o['auth_at'])) { return 0; }
+    return (int)floor((strtotime(date('Y-m-d')) - strtotime(substr((string)$o['auth_at'], 0, 10))) / 86400) + 1;
+}
+
+/** 受注一覧・詳細に出す仮売上の札。6日目からは赤（カードの仮売上はおおむね7日で切れる）。 */
+function kv_auth_badge(array $o): string
+{
+    $st = (string)($o['auth_status'] ?? '');
+    if ($st === '') { return ''; }
+    if ($st === 'authorized') {
+        $d = kv_auth_day($o);
+        $red = $d >= 6;
+        return '<div><span class="tag" style="background:' . ($red ? '#fde8e7;color:#b3261e' : '#fff4e0;color:#8a5300') . '" title="仮売上 '
+             . kv_e(substr((string)$o['auth_at'], 0, 16)) . '・おおむね7日で切れます">仮売上 ' . $d . '日目</span></div>';
+    }
+    $lab = ['captured' => ['売上確定', '#e9f7ef;color:#14632f'], 'canceled' => ['仮売上取消', '#eef0f2;color:#52636b'], 'expired' => ['仮売上切れ', '#fde8e7;color:#b3261e']][$st] ?? [$st, '#eef0f2;color:#52636b'];
+    return '<div><span class="tag" style="background:' . $lab[1] . '">' . $lab[0] . '</span></div>';
+}
+
+/** 売上を確定する。金額は今の受注の合計（値引きで減っていれば減らして確定。仮売上の額を超える増額はできない）。 */
+function kv_stripe_capture(int $oid): void
+{
+    $o = kv_order($oid);
+    if (!$o || ($o['auth_status'] ?? '') !== 'authorized') { throw new RuntimeException('仮売上中ではありません'); }
+    $amt = (int)$o['total'];
+    if ($amt > (int)$o['auth_amount']) {
+        throw new RuntimeException('受注の合計（' . number_format($amt) . '円）が仮売上の額（' . number_format((int)$o['auth_amount']) . '円）を超えています。超える分は確定できません');
+    }
+    $pi = kv_stripe_call('POST', '/payment_intents/' . rawurlencode((string)$o['auth_pi']) . '/capture', ['amount_to_capture' => $amt], 'kv-cap-' . $o['code'] . '-' . $amt);
+    if (($pi['status'] ?? '') !== 'succeeded') { throw new RuntimeException('確定できませんでした（' . ($pi['status'] ?? '?') . '）'); }
+    kv_db()->prepare("UPDATE orders SET auth_status='captured', auth_done_at=? WHERE id=?")->execute([date('Y-m-d H:i:s'), $oid]);
+    kv_log($oid, 'stripe', '売上を確定しました: ' . $o['auth_pi'] . ' ' . number_format($amt) . '円');
+    kv_order_flag($oid, 'paid', true, false);
+}
+
+/** 仮売上を取り消す（手数料はかからない）。 */
+function kv_stripe_cancel_auth(int $oid, string $why = ''): void
+{
+    $o = kv_order($oid);
+    if (!$o || ($o['auth_status'] ?? '') !== 'authorized') { throw new RuntimeException('仮売上中ではありません'); }
+    $pi = kv_stripe_call('POST', '/payment_intents/' . rawurlencode((string)$o['auth_pi']) . '/cancel', ['cancellation_reason' => 'requested_by_customer'], 'kv-cxl-' . $o['code']);
+    if (($pi['status'] ?? '') !== 'canceled') { throw new RuntimeException('取り消せませんでした（' . ($pi['status'] ?? '?') . '）'); }
+    kv_db()->prepare("UPDATE orders SET auth_status='canceled', auth_done_at=? WHERE id=?")->execute([date('Y-m-d H:i:s'), $oid]);
+    kv_log($oid, 'stripe', '仮売上を取り消しました' . ($why !== '' ? '（' . $why . '）' : '') . ': ' . $o['auth_pi']);
 }
 
 /*
@@ -342,7 +424,10 @@ function kv_stripe_checkout_pending(array $cart, array $post): array
         'customer_email' => (string)($post['email'] ?? ''),
         'client_reference_id' => 'p' . $pid,
         'metadata' => ['kv_pending_id' => (string)$pid],
-        'payment_intent_data' => ['metadata' => ['kv_pending_id' => (string)$pid], 'description' => kv_shop('name') . ' ご注文'],
+        // 仮売上（与信）にして、在庫を確かめてから受注画面で確定する（2026-11-19 ユーザー指示「注文時は仮売上」）。
+        // 欠品で取り消すときに Stripe の手数料がかからない（確定後の返金では手数料が戻らない）
+        'payment_intent_data' => ['metadata' => ['kv_pending_id' => (string)$pid], 'description' => kv_shop('name') . ' ご注文',
+                                  'capture_method' => 'manual'],
         'payment_method_options' => ['card' => ['request_three_d_secure' => 'any']],
         'success_url' => $base . '/cart/complete?pc=' . $token,
         'cancel_url' => $base . '/cart/confirm?canceled=1',
@@ -368,7 +453,9 @@ function kv_pending_finalize(int $pid, ?array $session = null): int
     if ((string)$pc['session_id'] === '') { return 0; }
     // 通知の中身は信じず、Stripe に問い合わせて確かめる
     $s = kv_stripe_call('GET', '/checkout/sessions/' . rawurlencode((string)$pc['session_id']));
-    if (!in_array($s['payment_status'] ?? '', ['paid', 'no_payment_required'], true)) { return 0; }
+    $paid = in_array($s['payment_status'] ?? '', ['paid', 'no_payment_required'], true);
+    $auth = $paid ? null : kv_stripe_authorized($s, (int)$pc['total']);   // 仮売上（2026-11-19〜の標準）
+    if (!$paid && !$auth) { return 0; }
     if ((int)($s['amount_total'] ?? -1) !== (int)$pc['total']) {
         error_log('kvcart pending ' . $pid . ': 金額が合わない ' . ($s['amount_total'] ?? '') . ' / ' . $pc['total']);
         return 0;
@@ -389,10 +476,14 @@ function kv_pending_finalize(int $pid, ?array $session = null): int
     }
     $db->prepare('UPDATE orders SET stripe_id=? WHERE id=?')->execute([(string)$pc['session_id'], $oid]);
     $db->prepare("UPDATE pending_checkouts SET status='done', order_id=? WHERE id=?")->execute([$oid, $pid]);
-    kv_log($oid, 'stripe', 'カードでのお支払いを確認してから注文を登録しました: ' . $pc['session_id'] . ' / ' . ($s['payment_intent'] ?? '')
+    kv_log($oid, 'stripe', ($auth ? 'カードの仮売上を確認してから' : 'カードでのお支払いを確認してから') . '注文を登録しました: ' . $pc['session_id'] . ' / ' . ($s['payment_intent'] ?? '')
            . ' ' . number_format((int)$s['amount_total']) . '円');
     $GLOBALS['kv_risk_note'] = kv_stripe_risk_note($oid, (string)($s['payment_intent'] ?? ''));
-    kv_order_flag($oid, 'paid', true, false);
+    if ($auth) {
+        kv_auth_record($oid, $auth);   // 入金チェックは「売上を確定」で付く
+    } else {
+        kv_order_flag($oid, 'paid', true, false);
+    }
     kv_mail_send($oid, 'order_paid_card');
     return $oid;
 }

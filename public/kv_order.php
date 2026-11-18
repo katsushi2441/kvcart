@@ -67,6 +67,10 @@ function kv_order_schema(): void
         if (!$has('order_mails', 'kind'))    { kv_db()->exec('ALTER TABLE order_mails ADD COLUMN kind TEXT'); }
         // 値引き（税別・10%対象から引く）。見積書どおりの金額に合わせるため（2026-11-18）
         if (!$has('orders', 'discount'))     { kv_db()->exec('ALTER TABLE orders ADD COLUMN discount INTEGER DEFAULT 0'); }
+        // カードの仮売上（2026-11-19 ユーザー指示「注文時は仮売上」）。auth_status: authorized（仮売上中）/ captured（売上確定）/ canceled（取消）/ expired（期限切れ）
+        foreach (['auth_status' => 'TEXT', 'auth_pi' => 'TEXT', 'auth_amount' => 'INTEGER', 'auth_at' => 'TEXT', 'auth_done_at' => 'TEXT'] as $c => $t) {
+            if (!$has('orders', $c)) { kv_db()->exec("ALTER TABLE orders ADD COLUMN $c $t"); }
+        }
         if (!$has('mail_templates', 'label')) { kv_db()->exec('ALTER TABLE mail_templates ADD COLUMN label TEXT'); }
         if (!$has('mail_templates', 'kind'))  { kv_db()->exec('ALTER TABLE mail_templates ADD COLUMN kind TEXT'); }
         // 区分を記録する前に送ったメールは、件名から区分を当てる
@@ -258,9 +262,11 @@ function kv_mail_defaults(): array
         'order_received' => ['ご注文ありがとうございます（{code}）',
             "{name} 様\n\nご注文ありがとうございます。下記の内容で承りました。\n\n"
             . "受注番号: {code}\n合計: {total}円（税込）\n\n{items}\n\n{next}\n\n{shop}\n{email}\n"],
-        'order_paid_card' => ['ご注文とお支払いを確認しました（{code}）',
-            "{name} 様\n\nご注文と、クレジットカードでのお支払いを確認しました。ありがとうございます。\n\n"
-            . "受注番号: {code}\nお支払い金額: {total}円（税込）\n\n{items}\n\n"
+        'order_paid_card' => ['ご注文を承りました（{code}）',
+            "{name} 様\n\nご注文ありがとうございます。下記の内容で承りました。\n\n"
+            . "受注番号: {code}\n合計: {total}円（税込）\n\n{items}\n\n"
+            . "【クレジットカードのお支払いについて】\nご注文の時点では、カードのお支払い枠を確保する「仮売上」にしています。"
+            . "メーカーに在庫と納期を確かめてから売上を確定します。手配できない場合は仮売上を取り消しますので、ご請求はありません。\n\n"
             . "【今後の流れ】\nメーカーに在庫と納期を確認し、納期をメールでお知らせします。\n\n{shop}\n{email}\n"],
         'flag_paid' => ['ご入金を確認しました（{code}）',
             "{name} 様\n\nご入金を確認しました。ありがとうございます。\n"
@@ -447,7 +453,7 @@ function kv_mail_send(int $oid, string $key): bool
     if (in_array($key, ['order_received', 'order_paid_card'], true) && $from !== '') {
         // 店にも同じ内容を送る（新しい注文に気づけるように）。カード払いは決済が終わってから
         $note = (!empty($o['bl_note']) ? "【ブラックリストに一致】" . $o['bl_note'] . "\n" : '')
-              . ($key === 'order_paid_card' ? "新しい注文が入り、カードでのお支払いも確認しました。" : "新しい注文が入りました。")
+              . ($key === 'order_paid_card' ? "新しい注文が入りました。カードは仮売上です（在庫を確かめてから受注画面で「売上を確定」を押してください）。" : "新しい注文が入りました。")
               . "お客様には下の内容でメールを送っています（送信: " . ($ok ? '成功' : '失敗') . "）。\n"
               . "お客様: " . $o['name'] . ' ' . ($o['company'] ?? '') . " / " . $o['email'] . " / " . ($o['tel'] ?? '') . "\n"
               . "発注用の社内型番: " . implode(' / ', array_map(static fn($it) => $it['model_number'] . ' ×' . (int)$it['qty'], kv_order_items($oid))) . "\n"
