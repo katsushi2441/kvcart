@@ -207,3 +207,18 @@ function kv_restock_send(int $pid): int
     }
     return $n;
 }
+
+/**
+ * メーカーごとの納期（2026-11-18）。kv_data/maker_leadtime.json: {"メーカーID": {"min": 営業日, "max": 営業日, "note": "表示文"}}
+ * 受注生産などで発送まで日数がかかるメーカーに設定する。Google ショッピングのフィード（発送までの日数）と商品ページの表示に使う。
+ */
+function kv_maker_leadtime($makerId): ?array
+{
+    static $all = null;
+    if ($all === null) {
+        $f = KV_DATA . '/maker_leadtime.json';
+        $all = is_file($f) ? (json_decode((string)file_get_contents($f), true) ?: []) : [];
+    }
+    $v = $all[(string)(int)$makerId] ?? null;
+    return is_array($v) && (int)($v['max'] ?? 0) > 0 ? $v : null;
+}

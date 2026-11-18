@@ -83,6 +83,8 @@ function kv_gshop_build(string $path): array
               . (!empty($gpc[(string)$p['id']]) ? '<g:google_product_category>' . $x($gpc[(string)$p['id']]) . '</g:google_product_category>' : '')
               . (isset($cats[(int)$p['category_id']]) ? '<g:product_type>' . $x(($mk !== '' ? '' : '') . $cats[(int)$p['category_id']]) . '</g:product_type>' : '')
               . (isset($sold[(string)$p['id']]) ? '<g:custom_label_0>sold</g:custom_label_0>' : '<g:custom_label_0>unsold</g:custom_label_0>')
+              // メーカーごとの納期（受注生産など）。Merchant Center の配送設定の準備日数より優先される
+              . (($lt = kv_maker_leadtime($p['maker_id'])) ? '<g:min_handling_time>' . (int)($lt['min'] ?? $lt['max']) . '</g:min_handling_time><g:max_handling_time>' . (int)$lt['max'] . '</g:max_handling_time>' : '')
               . '<g:shipping><g:country>JP</g:country><g:price>0 JPY</g:price></g:shipping>'
               . "</item>\n";
         if (isset($sold[(string)$p['id']])) { $skip['売れた商品']++; }

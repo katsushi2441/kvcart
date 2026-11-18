@@ -606,7 +606,9 @@ function kv_page_product(int $id): void
     $pfaq = [
         [$label . 'の価格はいくらですか？', $incl !== null ? '税込' . number_format($incl) . '円（本体' . number_format((int)$p['price']) . '円）です。'
                                                    : '価格はお問い合わせください。ご希望の数量と送り先をお知らせいただければ、価格と納期をご案内します。'],
-        [$label . 'の納期はどのくらいですか？', 'ご注文・お問い合わせのあと、メーカー・仕入先に在庫と納期を確認してメールでご連絡します。'],
+        [$label . 'の納期はどのくらいですか？', ($lt0 = kv_maker_leadtime($p['maker_id'])) && trim((string)($lt0['note'] ?? '')) !== ''
+                ? (string)$lt0['note'] . '。ご注文のあと、メーカーに確認した納期をメールでご連絡します。'
+                : 'ご注文・お問い合わせのあと、メーカー・仕入先に在庫と納期を確認してメールでご連絡します。'],
     ];
     if (kv_is_xdirect()) { $pfaq[] = [$label . 'の送料はかかりますか？', kv_shop('ship_note')]; }
     $o = kv_base_url();
@@ -647,6 +649,9 @@ function kv_page_product(int $id): void
     }
     if (($sl = kv_stock_label($p)) !== '') {
         echo '<p class="src"' . (kv_stock_state($p) === 'low' ? ' style="color:#b45309;font-weight:700"' : '') . '>' . kv_e($sl) . '</p>';
+    }
+    if ($incl !== null && ($lt = kv_maker_leadtime($p['maker_id'])) && trim((string)($lt['note'] ?? '')) !== '') {
+        echo '<p class="src" style="color:#b45309;font-weight:700">納期：' . kv_e((string)$lt['note']) . '</p>';
     }
     if ($incl !== null && !kv_inquiry_only($p) && !kv_stock_orderable($p)) {
         // 在庫切れで注文を受け付けない設定のとき。カートの代わりに再入荷お知らせ（おちゃのこネットと同じ）
