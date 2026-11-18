@@ -343,6 +343,12 @@ function kv_maker_facts(int $id): array
 function kv_page_group(int $id, int $page): void
 {
     $mk = kv_maker($id);
+    // 旧サイトで同じメーカーが2つのグループに分かれていた場合など、空になったグループの URL を
+    // 移したメーカーのページとして出す（kv_data/group_alias.json: {"316": 272}。canonical は移した先）
+    if (!$mk && is_file(KV_DATA . '/group_alias.json')) {
+        $al = json_decode((string)file_get_contents(KV_DATA . '/group_alias.json'), true) ?: [];
+        if (isset($al[(string)$id]) && ($m2 = kv_maker((int)$al[(string)$id]))) { $id = (int)$al[(string)$id]; $mk = $m2; }
+    }
     if (!$mk) {
         // 移行していないグループのURL。404にせず一覧へ案内する
         http_response_code(404);
