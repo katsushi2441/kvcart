@@ -739,14 +739,14 @@ function kv_page_product(int $id): void
     kv_footer();
 }
 
-/** 関連商品。同じメーカー・同じ分類から、足りなければ同じ分類から（自分は除く・表示している商品だけ）。 */
+/** 関連商品。売れた商品を先に（2026-11-19）。同じメーカー・同じ分類から、足りなければ同じ分類から（自分は除く・表示している商品だけ）。 */
 function kv_related(array $p, int $n = 8): array
 {
     $db = kv_db(); $out = []; $seen = [(int)$p['id'] => true];
     $qs = [];
-    if ($p['maker_id'] && $p['category_id']) { $qs[] = ['SELECT * FROM products WHERE hidden=0 AND maker_id=? AND category_id=? AND id<>? ORDER BY (image_url<>"") DESC, id DESC LIMIT ?', [(int)$p['maker_id'], (int)$p['category_id'], (int)$p['id'], $n]]; }
-    if ($p['category_id']) { $qs[] = ['SELECT * FROM products WHERE hidden=0 AND category_id=? AND id<>? ORDER BY (image_url<>"") DESC, id DESC LIMIT ?', [(int)$p['category_id'], (int)$p['id'], $n * 2]]; }
-    if ($p['maker_id']) { $qs[] = ['SELECT * FROM products WHERE hidden=0 AND maker_id=? AND id<>? ORDER BY (image_url<>"") DESC, id DESC LIMIT ?', [(int)$p['maker_id'], (int)$p['id'], $n]]; }
+    if ($p['maker_id'] && $p['category_id']) { $qs[] = ['SELECT * FROM products WHERE hidden=0 AND maker_id=? AND category_id=? AND id<>? ORDER BY ' . kv_sold_order() . '(image_url<>"") DESC, id DESC LIMIT ?', [(int)$p['maker_id'], (int)$p['category_id'], (int)$p['id'], $n]]; }
+    if ($p['category_id']) { $qs[] = ['SELECT * FROM products WHERE hidden=0 AND category_id=? AND id<>? ORDER BY ' . kv_sold_order() . '(image_url<>"") DESC, id DESC LIMIT ?', [(int)$p['category_id'], (int)$p['id'], $n * 2]]; }
+    if ($p['maker_id']) { $qs[] = ['SELECT * FROM products WHERE hidden=0 AND maker_id=? AND id<>? ORDER BY ' . kv_sold_order() . '(image_url<>"") DESC, id DESC LIMIT ?', [(int)$p['maker_id'], (int)$p['id'], $n]]; }
     foreach ($qs as [$sql, $args]) {
         $st = $db->prepare($sql); $st->execute($args);
         foreach ($st->fetchAll() as $r) {

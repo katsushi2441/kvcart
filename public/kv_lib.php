@@ -182,6 +182,41 @@ function kv_category(int $id): ?array
 }
 
 /**
+ * 直近1年に売れた商品（2026-11-19）。[商品ID => 注文回数]。
+ * おちゃのこ時代の分は kv_data/sales_history.json、この店の注文は orders から足す。
+ * 一覧・関連商品で売れた商品を先に並べ、店の中のリンクを売れる商品に集めるため
+ * （検索の流入が売れない商品に偏り、売れる商品が弱かった。kvcart-sales/seo_sold_20261119）。
+ */
+function kv_sold_counts(): array
+{
+    static $c = null;
+    if ($c !== null) { return $c; }
+    $c = [];
+    $f = __DIR__ . '/kv_data/sales_history.json';
+    if (is_file($f)) {
+        $j = json_decode((string)file_get_contents($f), true);
+        foreach (($j['items'] ?? []) as $pid => $it) { $c[(int)$pid] = (int)($it['orders'] ?? 1); }
+    }
+    try {
+        $st = kv_db()->prepare('SELECT i.product_id pid, COUNT(DISTINCT o.id) n FROM order_items i JOIN orders o ON o.id=i.order_id'
+                               . ' WHERE o.cancelled=0 AND o.created_at>=? GROUP BY i.product_id');
+        $st->execute([date('Y-m-d', strtotime('-365 days'))]);
+        foreach ($st->fetchAll() as $r) { $c[(int)$r['pid']] = ($c[(int)$r['pid']] ?? 0) + (int)$r['n']; }
+    } catch (Throwable $e) { /* 注文の表がまだ無い */ }
+    return $c;
+}
+
+/** ORDER BY の先頭に置く「売れた回数の多い順」（商品IDは整数だけなのでそのまま埋め込む）。 */
+function kv_sold_order(string $col = 'id'): string
+{
+    $c = kv_sold_counts();
+    if (!$c) { return ''; }
+    $w = [];
+    foreach ($c as $pid => $n) { $w[] = 'WHEN ' . (int)$pid . ' THEN ' . (int)$n; }
+    return 'CASE ' . $col . ' ' . implode(' ', $w) . ' ELSE 0 END DESC, ';
+}
+
+/**
  * 商品を引く。$where は ['maker_id'=>54] のような単純な等値と、'q'（名前・型番の部分一致）。
  * 一覧は必ずページングする（5,736件を一度に出すとメモリ128Mで落ちる）。
  */
@@ -213,7 +248,7 @@ function kv_products(array $f = [], int $page = 1, int $per = 24): array
     $off = ($page - 1) * $per;
     $st = kv_db()->prepare('SELECT id,name,model_number,price,list_price,stock,stock_unlimited,'
                            . 'image_url,maker_id,category_id,tax_reduce ' . $sql
-                           . ' ORDER BY id DESC LIMIT ' . (int)$per . ' OFFSET ' . (int)$off);
+                           . ' ORDER BY ' . kv_sold_order() . 'id DESC LIMIT ' . (int)$per . ' OFFSET ' . (int)$off);
     $st->execute($a);
     return ['items' => $st->fetchAll(), 'total' => $total, 'page' => $page,
             'per' => $per, 'pages' => (int)ceil($total / $per)];
