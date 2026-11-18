@@ -104,7 +104,7 @@ function kv_order_create(array $cart, array $post): int
         $ship_other ? trim((string)($post['s_zip'] ?? '')) : '',
         $ship_other ? kv_join_address($post, 's_') : '',
         $ship_other ? trim((string)($post['s_tel'] ?? '')) : '',
-        ($post['payment'] ?? 'bank') === 'stripe' && kv_stripe_ready() ? 'stripe' : 'bank',
+        ($post['payment'] ?? 'bank') === 'stripe' && (kv_stripe_ready() || !empty($post['_card_paid'])) ? 'stripe' : 'bank',
         $cart['subtotal'], $cart['tax'], $cart['total'], $now]);
     $oid = (int)$db->lastInsertId();
     $si = $db->prepare('INSERT INTO order_items (order_id,product_id,name,model_number,unit,qty,amount,tax)'

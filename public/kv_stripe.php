@@ -235,6 +235,14 @@ function kv_stripe_risk_note(int $oid, string $pi): string
 function kv_stripe_handle(array $ev): string
 {
     $obj = $ev['data']['object'] ?? [];
+    // 決済が終わってから注文を登録する形（2026-11-18〜）の決済画面
+    if (!empty($obj['metadata']['kv_pending_id'])) {
+        if (in_array($ev['type'] ?? '', ['checkout.session.completed', 'checkout.session.async_payment_succeeded'], true)) {
+            $oid = kv_pending_finalize((int)$obj['metadata']['kv_pending_id'], $obj);
+            return $oid ? 'paid: order ' . $oid : 'pending: not paid';
+        }
+        return 'ignored: pending ' . ($ev['type'] ?? '');
+    }
     $oid = (int)($obj['metadata']['kv_order_id'] ?? 0);
     $o = $oid ? kv_order($oid) : null;
     if (!$o) { return 'ignored: no order'; }
@@ -274,4 +282,106 @@ function kv_stripe_handle(array $ev): string
             return 'voided logged';
     }
     return 'ignored: ' . ($ev['type'] ?? '');
+}
+
+/*
+ * カード払いは、決済が終わってから注文を登録する（2026-11-18 ユーザー指示）。
+ * 「注文する」を押したら、カートとお客様の入力を pending_checkouts（決済待ち）に置いて Stripe の決済画面へ移す。
+ * 決済の完了（webhook の checkout.session.completed か、お客様が完了ページに戻ったとき）で Stripe に支払い済みを
+ * 確かめてから kv_order_create する。決済をやめた・失敗した注文は受注一覧に出ない。
+ */
+function kv_pending_schema(): void
+{
+    kv_db()->exec('CREATE TABLE IF NOT EXISTS pending_checkouts (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT UNIQUE,
+        created_at TEXT, session_id TEXT, cart TEXT, post TEXT, total INTEGER, ip TEXT, status TEXT DEFAULT "open", order_id INTEGER)');
+}
+
+function kv_stripe_checkout_pending(array $cart, array $post): array
+{
+    kv_pending_schema();
+    $lines = [];
+    foreach ($cart['lines'] as $l) {
+        $p = $l['product'];
+        $nm = $p['name'] . (!empty($l['opt']) ? '（' . $l['opt'] . '）' : '');
+        $mdl = kv_model_display($p['model_number'], $p['name']);
+        if ($mdl !== '' && mb_stripos($nm, $mdl) === false) { $nm .= ' [' . $mdl . ']'; }
+        $lines[] = ['price_data' => ['currency' => 'jpy', 'unit_amount' => (int)$l['unit'], 'product_data' => ['name' => mb_strimwidth($nm, 0, 240, '…')]],
+                    'quantity' => (int)$l['qty']];
+    }
+    if ((int)$cart['tax'] > 0) {
+        $lines[] = ['price_data' => ['currency' => 'jpy', 'unit_amount' => (int)$cart['tax'], 'product_data' => ['name' => '消費税']], 'quantity' => 1];
+    }
+    $sum = 0;
+    foreach ($lines as $l) { $sum += $l['price_data']['unit_amount'] * $l['quantity']; }
+    if ($sum !== (int)$cart['total']) {
+        throw new RuntimeException('明細の合計（' . $sum . '円）がご注文の合計（' . (int)$cart['total'] . '円）と合いません');
+    }
+    $token = bin2hex(random_bytes(12));
+    $db = kv_db();
+    $db->prepare('INSERT INTO pending_checkouts (token,created_at,cart,post,total,ip) VALUES (?,?,?,?,?,?)')
+       ->execute([$token, date('Y-m-d H:i:s'), json_encode($cart, JSON_UNESCAPED_UNICODE), json_encode($post, JSON_UNESCAPED_UNICODE),
+                  (int)$cart['total'], (string)($_SERVER['REMOTE_ADDR'] ?? '')]);
+    $pid = (int)$db->lastInsertId();
+    $base = 'https://' . ($_SERVER['HTTP_HOST'] ?? 'www.exdirect.net') . KV_BASE;
+    $letters = '';
+    for ($i = 0; $i < 8; $i++) { $letters .= chr(97 + random_int(0, 25)); }
+    $s = kv_stripe_call('POST', '/checkout/sessions', [
+        'mode' => 'payment',
+        'line_items' => $lines,
+        'customer_email' => (string)($post['email'] ?? ''),
+        'client_reference_id' => 'p' . $pid,
+        'metadata' => ['kv_pending_id' => (string)$pid],
+        'payment_intent_data' => ['metadata' => ['kv_pending_id' => (string)$pid], 'description' => kv_shop('name') . ' ご注文'],
+        'payment_method_options' => ['card' => ['request_three_d_secure' => 'any']],
+        'success_url' => $base . '/cart/complete?pc=' . $token,
+        'cancel_url' => $base . '/cart/confirm?canceled=1',
+        'integration_identifier' => 'kvcart-checkout-' . $letters,
+    ], 'kv-pc-' . $token);
+    $db->prepare('UPDATE pending_checkouts SET session_id=? WHERE id=?')->execute([$s['id'], $pid]);
+    return $s;
+}
+
+/**
+ * 決済待ちを注文にする。Stripe に支払い済み・金額一致を確かめてから kv_order_create する。
+ * webhook と完了ページの両方から呼ばれても注文は1件だけ（status を open→finalizing に取れた方だけが作る）。
+ * 返り値: 注文の id（まだ払われていない・ほかが作成中なら 0）
+ */
+function kv_pending_finalize(int $pid, ?array $session = null): int
+{
+    kv_pending_schema();
+    $db = kv_db();
+    $get = function () use ($db, $pid) { $st = $db->prepare('SELECT * FROM pending_checkouts WHERE id=?'); $st->execute([$pid]); return $st->fetch() ?: null; };
+    $pc = $get();
+    if (!$pc) { return 0; }
+    if ((int)$pc['order_id'] > 0) { return (int)$pc['order_id']; }
+    if ((string)$pc['session_id'] === '') { return 0; }
+    // 通知の中身は信じず、Stripe に問い合わせて確かめる
+    $s = kv_stripe_call('GET', '/checkout/sessions/' . rawurlencode((string)$pc['session_id']));
+    if (!in_array($s['payment_status'] ?? '', ['paid', 'no_payment_required'], true)) { return 0; }
+    if ((int)($s['amount_total'] ?? -1) !== (int)$pc['total']) {
+        error_log('kvcart pending ' . $pid . ': 金額が合わない ' . ($s['amount_total'] ?? '') . ' / ' . $pc['total']);
+        return 0;
+    }
+    $u = $db->prepare("UPDATE pending_checkouts SET status='finalizing' WHERE id=? AND status='open'");
+    $u->execute([$pid]);
+    if ($u->rowCount() !== 1) { $pc = $get(); return (int)($pc['order_id'] ?? 0); }
+    $cart = json_decode((string)$pc['cart'], true) ?: [];
+    $post = json_decode((string)$pc['post'], true) ?: [];
+    $post['payment'] = 'stripe';
+    $post['_card_paid'] = 1;   // 決済済みの確定なので、設定に関係なくカード払いの注文として作る（受付メールは下で order_paid_card）
+    $ipBack = $_SERVER['REMOTE_ADDR'] ?? null;
+    $_SERVER['REMOTE_ADDR'] = (string)$pc['ip'];   // ブラックリストの照合はお客様の IP で
+    try {
+        $oid = kv_order_create($cart, $post);
+    } finally {
+        if ($ipBack === null) { unset($_SERVER['REMOTE_ADDR']); } else { $_SERVER['REMOTE_ADDR'] = $ipBack; }
+    }
+    $db->prepare('UPDATE orders SET stripe_id=? WHERE id=?')->execute([(string)$pc['session_id'], $oid]);
+    $db->prepare("UPDATE pending_checkouts SET status='done', order_id=? WHERE id=?")->execute([$oid, $pid]);
+    kv_log($oid, 'stripe', 'カードでのお支払いを確認してから注文を登録しました: ' . $pc['session_id'] . ' / ' . ($s['payment_intent'] ?? '')
+           . ' ' . number_format((int)$s['amount_total']) . '円');
+    $GLOBALS['kv_risk_note'] = kv_stripe_risk_note($oid, (string)($s['payment_intent'] ?? ''));
+    kv_order_flag($oid, 'paid', true, false);
+    kv_mail_send($oid, 'order_paid_card');
+    return $oid;
 }

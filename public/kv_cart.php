@@ -359,6 +359,18 @@ function kv_page_confirm(): void
     if (!$c || empty($c['payment'])) { header('Location: ' . kv_url('cart/delivery')); return; }
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!kv_csrf_ok()) { http_response_code(400); echo '不正なリクエストです'; return; }
+        // カード払いは、ここでは注文を作らない。決済が終わってから注文にする（2026-11-18 ユーザー指示）。
+        // カートと入力は決済が終わるまで残す（決済をやめても確認画面からやり直せる）
+        if (($c['payment'] ?? '') === 'stripe' && kv_stripe_ready()) {
+            try {
+                $s = kv_stripe_checkout_pending($r, $c);
+                header('Location: ' . $s['url'], true, 303);   // Stripe の決済画面へ
+            } catch (Throwable $e) {
+                error_log('kvcart checkout: ' . $e->getMessage());
+                header('Location: ' . kv_url('cart/confirm') . '?payerror=1');
+            }
+            return;
+        }
         $oid = kv_order_create($r, $c);
         kv_cart_set([]);
         unset($_SESSION['checkout']);
@@ -384,6 +396,12 @@ function kv_page_confirm(): void
     kv_steps(3);
     echo '<div class="note">まだご注文は確定していません。内容をご確認のうえ、'
        . '一番下の「注文する」を押してください。</div>';
+    if (!empty($_GET['canceled'])) {
+        echo '<div class="alert">カードのお支払いが完了していないため、ご注文はまだ確定していません。'
+           . '内容をご確認のうえ、もう一度「注文する」を押してください。銀行振込に変えることもできます。</div>';
+    } elseif (!empty($_GET['payerror'])) {
+        echo '<div class="alert">カード決済の画面を開けませんでした。お手数ですが、もう一度お試しいただくか、銀行振込をお選びください。</div>';
+    }
     echo '<h2>ご注文商品</h2><div class="scroll"><table class="t">'
        . '<tr><th>商品名</th><th>販売価格</th><th>数量</th><th>小計</th></tr>';
     foreach ($r['lines'] as $l) {
@@ -457,6 +475,31 @@ function kv_page_pay(): void
 function kv_page_complete(): void
 {
     kv_session();
+    // カード決済から戻ってきたとき: 支払い済みを確かめて注文にする（webhook が先に作っていればその注文）
+    if (!empty($_GET['pc']) && preg_match('/^[0-9a-f]{24}$/', (string)$_GET['pc'])) {
+        kv_pending_schema();
+        $st = kv_db()->prepare('SELECT id FROM pending_checkouts WHERE token=?');
+        $st->execute([(string)$_GET['pc']]);
+        $pid = (int)$st->fetchColumn();
+        $made = 0;
+        if ($pid) {
+            for ($i = 0; $i < 3 && !$made; $i++) {
+                try { $made = kv_pending_finalize($pid); } catch (Throwable $e) { error_log('kvcart complete: ' . $e->getMessage()); }
+                if (!$made) { usleep(800000); }
+            }
+        }
+        if ($made) {
+            $_SESSION['last_order'] = $made;
+            kv_cart_set([]);
+            unset($_SESSION['checkout']);
+        } else {
+            kv_head('お支払いを確認しています', '', '/cart/complete', ['noindex' => true]);
+            echo '<div class="wrap"><h1>お支払いを確認しています</h1><div class="panel">カードのお支払いの確認に時間がかかっています。'
+               . '確認できしだい、ご注文の受付メールをお送りします。しばらくたっても届かないときは、お手数ですがお問い合わせください。</div></div>';
+            kv_footer();
+            return;
+        }
+    }
     $oid = $_SESSION['last_order'] ?? null;
     kv_head('ご注文ありがとうございます', '', '/cart/complete', ['noindex' => true]);
     echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">ホーム</a> ｜ ご注文完了</nav>'
