@@ -728,6 +728,8 @@ function kv_page_product(int $id): void
     echo '</table></div>';
     if ($p['description']) {
         echo '<h2>商品説明</h2><div class="panel desc">' . kv_clean_desc((string)$p['description']) . '</div>';
+        // 商品説明は AI で作っている（2026-11-19 ユーザー指示）。誤りがありうることと、メーカーの資料で確かめてほしいことを説明のすぐ下に
+        if (kv_is_xdirect()) { echo '<p class="descnote">※商品説明は、メーカーの公表資料などをもとに AI を使って作成しているため、誤りがある場合があります。ご注文の前に、メーカーのカタログや公式サイトで仕様をご確認ください。</p>'; }
     }
     echo '<h2>' . kv_e($label) . 'についてよくある質問</h2><div class="faq">';
     foreach ($pfaq as $x) { echo '<h3>' . kv_e($x[0]) . '</h3><p>' . kv_e($x[1]) . '</p>'; }
