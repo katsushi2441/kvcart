@@ -307,6 +307,7 @@ function kv_admin_product(): void
         $v['maker_id'] = ($_POST['maker_id'] ?? '') === '' ? null : (int)$_POST['maker_id'];
         $v['category_id'] = ($_POST['category_id'] ?? '') === '' ? null : (int)$_POST['category_id'];
         $v['variations'] = kv_admin_variations_from_post($_POST, $p['variations'] ?? null);
+        if ($id && isset($_POST['pay'])) { kv_payment_rule_set('product', $id, (string)$_POST['pay']); }   // お支払い方法（空＝メーカーの指定に従う）
         [$img, $ierr] = kv_admin_save_image($_FILES['image'] ?? []);
         if ($img) { $v['image_url'] = $img; }
         elseif (!empty($_POST['image_url_set'])) { $v['image_url'] = trim((string)$_POST['image_url_set']); }
@@ -359,6 +360,7 @@ function kv_admin_product(): void
        . '<label><input type="checkbox" name="price_unspecified" value="1"' . $chk('price_unspecified') . '> お問い合わせ品（カートで買えず「価格・納期を問い合わせる」にする）</label><br>'
        . '<label><input type="checkbox" name="tax_reduce" value="1"' . $chk('tax_reduce') . '> 軽減税率（8%）</label></td></tr>'
        . '<tr><th>メーカー</th><td>' . kv_sel('maker_id', $makers, $p['maker_id'], '（なし）') . '</td></tr>'
+       . ($id ? '<tr><th>お支払い方法</th><td>' . kv_sel('pay', KV_PAY_LABELS, kv_payment_rules()['products'][(string)$id] ?? '', 'メーカーの指定に従う（' . (KV_PAY_LABELS[kv_payment_rules()['makers'][(string)(int)$p['maker_id']] ?? 'all'] ?? 'すべて') . '）') . '</td></tr>' : '')
        . '<tr><th>カテゴリ</th><td>' . kv_sel('category_id', $cats, $p['category_id'], '（なし）') . '</td></tr>'
        . '<tr><th>画像</th><td>' . ($p['image_url'] ? '<img src="' . kv_e(kv_img($p['image_url'])) . '" alt="" style="max-width:200px;height:auto;border:1px solid #e3e9ee;border-radius:8px;display:block;margin-bottom:6px">'
             . '<label><input type="checkbox" name="image_clear" value="1"> 画像を外す</label><br>' : '')
@@ -608,7 +610,8 @@ function kv_admin_makers(): void
         else {
             $dup = kv_db()->prepare('SELECT id FROM makers WHERE slug=? AND id<>?'); $dup->execute([$slug, $id]);
             if ($dup->fetchColumn()) { $err = 'その URL名（' . $slug . '）はほかのメーカーが使っています。'; }
-            elseif ($id) { kv_db()->prepare('UPDATE makers SET name=?, slug=?, sort=? WHERE id=?')->execute([$name, $slug, $sort, $id]); header('Location: ?a=makers&saved=1'); exit; }
+            elseif ($id) { kv_db()->prepare('UPDATE makers SET name=?, slug=?, sort=? WHERE id=?')->execute([$name, $slug, $sort, $id]);
+                kv_payment_rule_set('maker', $id, (string)($_POST['pay'] ?? 'all')); header('Location: ?a=makers&saved=1'); exit; }
             else {
                 $nid = max((int)kv_db()->query('SELECT MAX(id) FROM makers')->fetchColumn(), 100000) + 1;
                 kv_db()->prepare('INSERT INTO makers (id,slug,name,sort) VALUES (?,?,?,?)')->execute([$nid, $slug, $name, $sort]);
@@ -619,11 +622,13 @@ function kv_admin_makers(): void
     kv_admin_page('メーカー', 'makers');
     if (!empty($_GET['saved'])) { echo '<div class="note">保存しました。</div>'; }
     if ($err) { echo '<div class="alert">' . kv_e($err) . '</div>'; }
+    echo '<p class="src">お支払い方法は、そのメーカーの全商品に効きます（商品の編集画面で、商品ごとに変えられます）。</p>';
     echo '<p class="src">URL名は /maker/〇〇 になります。<b>索引に載ったメーカーの URL名を変えると、そのページの検索順位がリセットされます</b>。</p>';
     $form = fn(array $m) => '<form method="post" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
         . '<input type="hidden" name="id" value="' . (int)($m['id'] ?? 0) . '"><input class="in" name="name" value="' . kv_e($m['name'] ?? '') . '" placeholder="メーカー名" style="width:180px">'
         . '<input class="in" name="slug" value="' . kv_e($m['slug'] ?? '') . '" placeholder="URL名（英小文字）" style="width:160px">'
-        . '<input class="in" name="sort" value="' . (int)($m['sort'] ?? 0) . '" style="width:70px" title="並び順"><button class="btn gray" type="submit">' . (!empty($m['id']) ? '保存' : '追加') . '</button></form>';
+        . '<input class="in" name="sort" value="' . (int)($m['sort'] ?? 0) . '" style="width:70px" title="並び順">'
+        . (!empty($m['id']) ? kv_sel('pay', KV_PAY_LABELS, kv_payment_rules()['makers'][(string)(int)$m['id']] ?? 'all', '') : '') . '<button class="btn gray" type="submit">' . (!empty($m['id']) ? '保存' : '追加') . '</button></form>';
     echo '<div class="panel"><b>メーカーを追加</b>' . $form([]) . '</div>';
     echo '<div class="scroll"><table class="t"><tr><th>ID</th><th>名前・URL名・並び順</th><th>商品</th><th></th></tr>';
     foreach (kv_admin_makers_all() as $m) {

@@ -298,11 +298,14 @@ function kv_page_delivery(): void
     $c = $_SESSION['checkout'] ?? [];
     if (!$r['lines']) { header('Location: ' . kv_url('cart')); return; }
     if (!$c) { header('Location: ' . kv_url('cart/customer')); return; }
+    // メーカー・商品ごとのお支払い方法の指定（kv_data/payment_rules.json・2026-11-20）
+    $pay = kv_cart_payment_methods($r);
+    if (!kv_stripe_ready()) { $pay['methods'] = array_values(array_diff($pay['methods'], ['stripe'])) ?: ['bank']; }
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!kv_csrf_ok()) { http_response_code(400); echo '不正なリクエストです'; return; }
         $_SESSION['checkout'] = array_merge($c, [
             'ship_to' => (string)($_POST['ship_to'] ?? 'same'),
-            'payment' => (string)($_POST['payment'] ?? 'bank'),
+            'payment' => in_array((string)($_POST['payment'] ?? ''), $pay['methods'], true) ? (string)$_POST['payment'] : $pay['methods'][0],
             'note' => (string)($_POST['note'] ?? ''),
         ] + array_intersect_key($_POST, array_flip(
             ['s_name', 's_zip', 's_pref', 's_address1', 's_address2', 's_address3', 's_tel'])));
@@ -332,14 +335,21 @@ function kv_page_delivery(): void
        . '<tr><th>番地</th><td><input type="text" name="s_address2"></td></tr>'
        . '<tr><th>ビル名など</th><td><input type="text" name="s_address3"></td></tr>'
        . '<tr><th>電話番号</th><td><input type="text" name="s_tel"></td></tr></table></div>';
-    echo '<h2>お支払い方法</h2><div class="panel">'
-       . '<label><input type="radio" name="payment" value="bank" checked> <b>銀行振込</b>（前払い）</label>'
-       . '<div class="src" style="margin:4px 0 10px 24px">ご入金を確認してから発送します。振込手数料はお客様のご負担でお願いします。</div>';
-    if (kv_stripe_ready()) {
-        echo '<label><input type="radio" name="payment" value="stripe"> <b>クレジットカード</b></label>'
+    echo '<h2>お支払い方法</h2><div class="panel">';
+    $first = $pay['methods'][0];
+    if ($pay['restricted'] && count($pay['methods']) < 2) {
+        echo '<div class="note" style="margin-bottom:10px">次の商品は、お支払いを<b>' . ($first === 'bank' ? '銀行振込' : 'クレジットカード') . '</b>のみでお受けしています。<br>'
+           . kv_e(implode('、', array_slice($pay['restricted'], 0, 5))) . (count($pay['restricted']) > 5 ? ' ほか' : '') . '</div>';
+    }
+    if (in_array('bank', $pay['methods'], true)) {
+        echo '<label><input type="radio" name="payment" value="bank"' . ($first === 'bank' ? ' checked' : '') . '> <b>銀行振込</b>（前払い）</label>'
+           . '<div class="src" style="margin:4px 0 10px 24px">ご入金を確認してから発送します。振込手数料はお客様のご負担でお願いします。</div>';
+    }
+    if (in_array('stripe', $pay['methods'], true)) {
+        echo '<label><input type="radio" name="payment" value="stripe"' . ($first === 'stripe' ? ' checked' : '') . '> <b>クレジットカード</b></label>'
            . '<div class="src" style="margin:4px 0 0 24px">「注文する」を押すと、カードのお支払い画面（Stripe）に進みます。'
            . 'カードは、ご注文の時点ではお支払い枠を確保する仮売上とし、在庫と納期を確かめて商品を手配してから売上を確定します。' . 'メーカーの欠品などで納期が長くかかる場合は、ご注文のあと納期をメールでお知らせし、ご了承をいただいてから手配します。ご了承いただけない場合はキャンセルできます（カードは仮売上を取り消すので、ご請求はありません）。</div>';
-    } else {
+    } elseif (!kv_stripe_ready()) {
         echo '<div class="src">クレジットカード決済は準備中です。</div>';
     }
     echo '</div><h2>備考</h2><div class="panel">'
@@ -374,6 +384,7 @@ function kv_page_confirm(): void
     $c = $_SESSION['checkout'] ?? [];
     if (!$r['lines']) { header('Location: ' . kv_url('cart')); return; }
     if (!$c || empty($c['payment'])) { header('Location: ' . kv_url('cart/delivery')); return; }
+    if (!in_array($c['payment'], kv_cart_payment_methods($r)['methods'], true)) { header('Location: ' . kv_url('cart/delivery')); return; }
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!kv_csrf_ok()) { http_response_code(400); echo '不正なリクエストです'; return; }
         // カード払いは、ここでは注文を作らない。決済が終わってから注文にする（2026-11-18 ユーザー指示）。

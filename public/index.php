@@ -659,6 +659,10 @@ function kv_page_product(int $id): void
     if ($incl !== null && ($lt = kv_maker_leadtime($p['maker_id'])) && trim((string)($lt['note'] ?? '')) !== '') {
         echo '<p class="src" style="color:#b45309;font-weight:700">納期：' . kv_e((string)$lt['note']) . '</p>';
     }
+    // お支払い方法の指定（メーカー・商品ごと・2026-11-20）
+    if ($incl !== null && !kv_inquiry_only($p) && ($pr = kv_payment_rule($p)) !== 'all') {
+        echo '<p class="src" style="color:#b45309;font-weight:700">お支払い方法：' . ($pr === 'bank' ? '銀行振込のみ（前払い）' : 'クレジットカードのみ') . '</p>';
+    }
     // 全商品：直送なので欠品で遅れることがある・カードは注文時は仮売上、在庫確認後に確定（2026-11-19 ユーザー指示）
     if ($incl !== null && !kv_inquiry_only($p) && function_exists('kv_stripe_ready') && kv_stripe_ready()) {
         echo '<p class="src" style="color:#b45309">メーカーの欠品などで納期が長くかかる場合は、ご注文のあと納期をメールでお知らせし、ご了承をいただいてから手配します。ご了承いただけない場合はキャンセルできます（カードは仮売上を取り消すので、ご請求はありません）。クレジットカードは、ご注文の時点ではお支払い枠を確保する仮売上とし、在庫と納期を確かめて商品を手配してから売上を確定します。</p>';

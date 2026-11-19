@@ -222,3 +222,59 @@ function kv_maker_leadtime($makerId): ?array
     $v = $all[(string)(int)$makerId] ?? null;
     return is_array($v) && (int)($v['max'] ?? 0) > 0 ? $v : null;
 }
+
+/**
+ * メーカーごと・商品ごとのお支払い方法（2026-11-20 ユーザー指示）。
+ * kv_data/payment_rules.json: {"makers": {"メーカーID": "bank"}, "products": {"商品ID": "bank"|"stripe"|"all"}}
+ *   bank = 銀行振込のみ／stripe = クレジットカードのみ／all = 制限なし（メーカーの指定を商品だけ外すとき）
+ * 商品の指定がメーカーの指定より優先。カートに複数の商品があるときは、全商品で使える方法だけを出す。
+ */
+const KV_PAY_LABELS = ['all' => 'すべて', 'bank' => '銀行振込のみ', 'stripe' => 'クレジットカードのみ'];
+
+function kv_payment_rules(bool $reload = false): array
+{
+    static $r = null;
+    if ($r === null || $reload) {
+        $f = KV_DATA . '/payment_rules.json';
+        $r = is_file($f) ? (json_decode((string)file_get_contents($f), true) ?: []) : [];
+        $r += ['makers' => [], 'products' => []];
+    }
+    return $r;
+}
+
+/** 'maker' か 'product' の指定を保存する。$rule が 'all'（メーカー）や ''（商品）なら指定を消す。 */
+function kv_payment_rule_set(string $kind, int $id, string $rule): void
+{
+    $r = kv_payment_rules(true);
+    $k = $kind === 'maker' ? 'makers' : 'products';
+    if ($rule === '' || ($kind === 'maker' && $rule === 'all') || !isset(KV_PAY_LABELS[$rule])) { unset($r[$k][(string)$id]); }
+    else { $r[$k][(string)$id] = $rule; }
+    file_put_contents(KV_DATA . '/payment_rules.json', json_encode($r, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), LOCK_EX);
+    kv_payment_rules(true);
+}
+
+/** その商品の指定（'all' / 'bank' / 'stripe'）。 */
+function kv_payment_rule(array $p): string
+{
+    $r = kv_payment_rules();
+    return (string)($r['products'][(string)(int)($p['id'] ?? 0)] ?? $r['makers'][(string)(int)($p['maker_id'] ?? 0)] ?? 'all');
+}
+
+/** その商品で使えるお支払い方法。 */
+function kv_payment_methods(array $p): array
+{
+    $rule = kv_payment_rule($p);
+    return $rule === 'all' ? ['bank', 'stripe'] : [$rule];
+}
+
+/** カート全体で使えるお支払い方法と、制限している商品名。全商品で共通の方法が無ければ銀行振込にする。 */
+function kv_cart_payment_methods(array $r): array
+{
+    $m = ['bank', 'stripe']; $why = [];
+    foreach ($r['lines'] as $l) {
+        $pm = kv_payment_methods($l['product']);
+        if (count($pm) < 2) { $why[] = (string)$l['product']['name']; }
+        $m = array_values(array_intersect($m, $pm));
+    }
+    return ['methods' => $m ?: ['bank'], 'restricted' => $why];
+}
