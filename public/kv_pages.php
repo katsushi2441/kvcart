@@ -1118,13 +1118,38 @@ function kv_page_why_low_price(): void
     kv_footer();
 }
 
-/** 商材募集の「信頼できる運営会社」の列のデータ（kv_data/supplier_social.json）。無ければ空。 */
+/**
+ * 商材募集の「信頼できる運営会社」の列のデータ。無ければ空。
+ * 数字は手で書かない（2026-11-19 ユーザー指示「数字はいつも最新に保たれるべき」）:
+ *  - 人数と顔ぶれは、Kurage フォロワーポータルが置く social.json を読む（同じサーバーの /web/exbridge_jp/kfollowers/。
+ *    ポータルの deploy.py が毎回作り直すので、ポータルと同じ数になる）。読めなければ kv_data/supplier_social.json（古い控え）。
+ *  - 当社の X のフォロワー数は、X（fxtwitter）から取り直す（6時間ごと・kv_data/x_followers_cache.json に控える）。取れなければ JSON の値。
+ */
 function kv_supplier_social(): array
 {
-    $f = __DIR__ . '/kv_data/supplier_social.json';
-    if (!is_file($f)) { return []; }
-    $d = json_decode((string)file_get_contents($f), true);
-    return is_array($d) && !empty($d['counts']) ? $d : [];
+    static $d = null;
+    if ($d !== null) { return $d; }
+    $d = [];
+    foreach ([dirname(__DIR__) . '/kfollowers/social.json', __DIR__ . '/kv_data/supplier_social.json'] as $f) {
+        if (!is_file($f)) { continue; }
+        $j = json_decode((string)file_get_contents($f), true);
+        if (is_array($j) && !empty($j['counts'])) { $d = $j; break; }
+    }
+    if (!$d) { return $d; }
+    $h = (string)($d['account']['handle'] ?? '');
+    if ($h === '') { return $d; }
+    $cf = __DIR__ . '/kv_data/x_followers_cache.json';
+    $c = is_file($cf) ? json_decode((string)file_get_contents($cf), true) : null;
+    if (!is_array($c) || ($c['handle'] ?? '') !== $h || time() - (int)($c['at'] ?? 0) > 6 * 3600) {
+        $ctx = stream_context_create(['http' => ['timeout' => 3, 'header' => "User-Agent: kvcart\r\n"]]);
+        $r = @file_get_contents('https://api.fxtwitter.com/' . rawurlencode($h), false, $ctx);
+        $n = $r ? (int)(json_decode($r, true)['user']['followers'] ?? 0) : 0;
+        // 取れなかったときも時刻だけ進めて、毎回の待ちを作らない（前の値を使う）
+        $c = ['handle' => $h, 'at' => time(), 'followers' => $n > 0 ? $n : (int)($c['followers'] ?? 0)];
+        @file_put_contents($cf, json_encode($c));
+    }
+    if ((int)($c['followers'] ?? 0) > 0) { $d['account']['followers'] = (int)$c['followers']; }
+    return $d;
 }
 
 /** 商材募集のよくある質問（本文と FAQPage で同じものを使う。事実だけ）。 */
