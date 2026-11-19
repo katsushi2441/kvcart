@@ -46,6 +46,9 @@ function kv_gshop_build(string $path): array
     $noimg = is_file(KV_DATA . '/gshop_noimage.json') ? (json_decode((string)file_get_contents(KV_DATA . '/gshop_noimage.json'), true) ?: []) : [];
     // 商品ごとの上書き（2026-11-19）: kv_data/gshop_override.json = {"商品ID": {"image": "gimg/p123.jpg", "color": "ブラック"}}
     // image は Merchant Center で「汎用的な画像」「画像に宣伝文」「画像が小さい」と不承認になった商品に、メーカー公式の大きい写真を使うため（店の商品ページの画像は変えない）
+    // 広告に出さないメーカー（custom_label_1 = noad）。在庫0・納期お問い合わせで移したメーカーは、無料掲載には載せて広告からは外す（2026-11-20 ユーザー指示）
+    // kv_data/gshop_noad_makers.json = {"メーカーID": "メーカー名"}
+    $noad = is_file(KV_DATA . '/gshop_noad_makers.json') ? (json_decode((string)file_get_contents(KV_DATA . '/gshop_noad_makers.json'), true) ?: []) : [];
     $ovr = is_file(KV_DATA . '/gshop_override.json') ? (json_decode((string)file_get_contents(KV_DATA . '/gshop_override.json'), true) ?: []) : [];
     $base = rtrim(defined('KV_ORIGIN') ? KV_ORIGIN : kv_site_url(''), '/');
     $tmp = $path . '.tmp';
@@ -89,6 +92,7 @@ function kv_gshop_build(string $path): array
               . (!empty($ov['color']) ? '<g:color>' . $x($ov['color']) . '</g:color>' : '')
               . (isset($cats[(int)$p['category_id']]) ? '<g:product_type>' . $x(($mk !== '' ? '' : '') . $cats[(int)$p['category_id']]) . '</g:product_type>' : '')
               . (isset($sold[(string)$p['id']]) ? '<g:custom_label_0>sold</g:custom_label_0>' : '<g:custom_label_0>unsold</g:custom_label_0>')
+              . (isset($noad[(string)(int)$p['maker_id']]) ? '<g:custom_label_1>noad</g:custom_label_1>' : '<g:custom_label_1>ad</g:custom_label_1>')
               // メーカーごとの納期（受注生産など）。Merchant Center の配送設定の準備日数より優先される
               . (($lt = kv_maker_leadtime($p['maker_id'])) ? '<g:min_handling_time>' . (int)($lt['min'] ?? $lt['max']) . '</g:min_handling_time><g:max_handling_time>' . (int)$lt['max'] . '</g:max_handling_time>' : '')
               . '<g:shipping><g:country>JP</g:country><g:price>0 JPY</g:price></g:shipping>'
