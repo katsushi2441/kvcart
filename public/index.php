@@ -924,7 +924,10 @@ function kv_llms(): void
        . "- [お問い合わせ]($o/contact): 掲載していない商品の見積もりも受け付けます\n"
        . (kv_is_xdirect() ? "- [商材募集]($o/supplier): 工具・機械・設備のメーカー・問屋さまの商材を募集（メーカー直送で販売）\n" : '')
        . (kv_systems() ? "- [業務システム]($o/business-systems): 運営会社の業務システム（受発注・EC・グループウェアなど、オンプレミス・買い切り）。購入は Kurage App Store\n" : '') . "\n"
-       . (kv_guides() ? "## 選び方ガイド\n\n" . implode('', array_map(fn($gs, $gd) => '- [' . $gd['title'] . "]($o/guide/$gs): " . ($gd['desc'] ?? '') . "\n", array_keys(kv_guides()), kv_guides())) . "\n" : '')
+       . implode('', array_map(function ($kind) use ($o) {
+             $l = array_filter(kv_guides(), fn($gd) => ($gd['kind'] ?? 'guide') === $kind);
+             return $l ? '## ' . kv_guide_kind_label($kind) . "\n\n" . implode('', array_map(fn($gs, $gd) => '- [' . $gd['title'] . "]($o/guide/$gs)" . ($kind === 'guide' && !empty($gd['desc']) ? ': ' . $gd['desc'] : '') . "\n", array_keys($l), $l)) . "\n" : '';
+         }, ['guide', 'parts']))
        . "## メーカー\n\n";
     foreach (kv_makers() as $mk) {
         echo '- [' . $mk['name'] . "の商品一覧]($o/product-group/" . (int)$mk['id'] . ")\n";

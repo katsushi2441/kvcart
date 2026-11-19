@@ -7,10 +7,17 @@
  * その店で売っている商品へ案内する。
  *
  * 中身は kv_data/guides/<slug>.json（プログラムを触らずに足せる）:
- *   {"slug","title","desc","lead","html","products":[商品ID],"faq":[{"q","a"}],"related_makers":[メーカーID],"checked_at"}
+ *   {"slug","title","desc","lead","html","products":[商品ID],"faq":[{"q","a"}],"related_makers":[メーカーID],"checked_at",
+ *    "kind": "guide"（選び方ガイド・省略時）| "parts"（機種別の交換部品：UPS の機種ごとの交換用バッテリーなど・2026-11-19）}
  * 本文（html）の中は店の中へのリンクだけ（外部リンクは置かない）。価格は書かない（商品カードが今の価格を出す）。
  */
 declare(strict_types=1);
+
+/** ガイドの種類の名前。 */
+function kv_guide_kind_label(string $kind): string
+{
+    return $kind === 'parts' ? '機種別の交換部品' : '選び方ガイド';
+}
 
 /** すべてのガイド（slug => データ）。 */
 function kv_guides(): array
@@ -32,14 +39,19 @@ function kv_guides(): array
 function kv_page_guide_index(): void
 {
     $g = kv_guides();
-    kv_head('商品の選び方ガイド', '計測機器・店舗機器などの選び方を、用途・規格・選ぶときの基準からまとめています。', '/guide');
-    echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a> › 選び方ガイド</nav><h1>商品の選び方ガイド</h1>'
-       . '<div class="panel"><ul>';
-    foreach ($g as $s => $d) {
-        echo '<li><a href="' . kv_url('guide/' . $s) . '">' . kv_e($d['title']) . '</a>'
-           . (!empty($d['desc']) ? '<div class="src">' . kv_e($d['desc']) . '</div>' : '') . '</li>';
+    kv_head('選び方ガイドと機種別の交換部品', '計測機器・店舗機器などの選び方と、UPS など機種ごとの交換部品（交換用バッテリーなど）をまとめています。', '/guide');
+    echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a> › ガイド</nav><h1>選び方ガイドと機種別の交換部品</h1>';
+    foreach (['guide', 'parts'] as $kind) {
+        $list = array_filter($g, fn($d) => ($d['kind'] ?? 'guide') === $kind);
+        if (!$list) { continue; }
+        echo '<h2>' . kv_e(kv_guide_kind_label($kind)) . '</h2><div class="panel"><ul>';
+        foreach ($list as $s => $d) {
+            echo '<li><a href="' . kv_url('guide/' . $s) . '">' . kv_e($d['title']) . '</a>'
+               . ($kind === 'guide' && !empty($d['desc']) ? '<div class="src">' . kv_e($d['desc']) . '</div>' : '') . '</li>';
+        }
+        echo '</ul></div>';
     }
-    echo '</ul></div></div>';
+    echo '</div>';
     kv_footer();
 }
 
@@ -67,7 +79,7 @@ function kv_page_guide(string $slug): void
          'publisher' => ['@type' => 'Organization', 'name' => kv_shop('company')]],
         ['@type' => 'BreadcrumbList', 'itemListElement' => [
             ['@type' => 'ListItem', 'position' => 1, 'name' => 'トップ', 'item' => $o . '/'],
-            ['@type' => 'ListItem', 'position' => 2, 'name' => '選び方ガイド', 'item' => $o . '/guide'],
+            ['@type' => 'ListItem', 'position' => 2, 'name' => kv_guide_kind_label((string)($d['kind'] ?? 'guide')), 'item' => $o . '/guide'],
             ['@type' => 'ListItem', 'position' => 3, 'name' => (string)$d['title']]]],
         $faq ? ['@type' => 'FAQPage', 'mainEntity' => array_map(fn($x) => ['@type' => 'Question', 'name' => (string)$x['q'],
             'acceptedAnswer' => ['@type' => 'Answer', 'text' => (string)$x['a']]], $faq)] : null,
@@ -77,7 +89,7 @@ function kv_page_guide(string $slug): void
     ]))];
     array_walk($graph['@graph'], function (&$n) { $n = array_filter($n, fn($v) => $v !== null); });
     kv_head((string)$d['title'], (string)($d['desc'] ?? ''), $path, ['jsonld' => $graph]);
-    echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a> › <a href="' . kv_url('guide') . '">選び方ガイド</a> › '
+    echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a> › <a href="' . kv_url('guide') . '">' . kv_e(kv_guide_kind_label((string)($d['kind'] ?? 'guide'))) . '</a> › '
        . kv_e($d['title']) . '</nav><h1>' . kv_e($d['title']) . '</h1>'
        . (!empty($d['lead']) ? '<p class="lead">' . kv_e($d['lead']) . '</p>' : '')
        . '<div class="panel desc guide">' . (string)($d['html'] ?? '') . '</div>';
@@ -111,6 +123,14 @@ function kv_guide_links(int $mid, int $pid = 0): string
         if ($byP || $byM) { $hit[$s] = $d; }
     }
     if (!$hit) { return ''; }
-    return '<p class="src">選び方ガイド：' . implode('　', array_map(fn($s, $d) => '<a href="' . kv_url('guide/' . $s) . '">' . kv_e($d['title']) . '</a>',
-        array_keys($hit), $hit)) . '</p>';
+    $out = '';
+    foreach (['guide', 'parts'] as $kind) {
+        $list = array_filter($hit, fn($d) => ($d['kind'] ?? 'guide') === $kind);
+        if (!$list) { continue; }
+        $more = count($list) > 8 ? '　ほか' . (count($list) - 8) . '件（<a href="' . kv_url('guide') . '">一覧</a>）' : '';
+        $list = array_slice($list, 0, 8, true);
+        $out .= '<p class="src">' . kv_e(kv_guide_kind_label($kind)) . '：' . implode('　', array_map(fn($s, $d) => '<a href="' . kv_url('guide/' . $s) . '">' . kv_e($d['title']) . '</a>',
+            array_keys($list), $list)) . $more . '</p>';
+    }
+    return $out;
 }
