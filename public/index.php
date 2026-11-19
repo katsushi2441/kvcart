@@ -595,6 +595,8 @@ function kv_page_product(int $id): void
     // かぎかっこの中は「商品名から型番・メーカー名・JAN・【】を除いたもの」（型番を二度書かない）
     $short = preg_replace('/【[^】]*】/u', ' ', (string)$p['name']);
     foreach (array_filter([$m0, $mk['name'] ?? '', kv_jan($p)]) as $w) { $short = str_ireplace($w, ' ', $short); }
+    // 「PowerTite(未来舎)」からメーカー名を消すと「PowerTite( )」が残るので、空のかっこも消す（2026-11-20）
+    $short = preg_replace('/[（(][\s　]*[)）]/u', ' ', $short);
     $short = trim(preg_replace('/[\s　]+/u', ' ', $short));
     if (mb_strlen($short) < 2 || mb_strlen($short) > 40) { $short = $label; }
     $shipShort = kv_is_xdirect() ? '送料は原則無料、メーカー・仕入先からの直送です。' : '';
