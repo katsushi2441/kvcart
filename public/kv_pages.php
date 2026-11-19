@@ -1111,11 +1111,25 @@ function kv_page_why_low_price(): void
        . '</div>'
        . '<p>' . kv_e($name) . 'は、これらがかからない自社開発のシステム（<a href="https://kappstore.exbridge.jp/app.php?id=754c7ddb5f1c8f26#ref=exdirect-why">Kurage Vibe-Cart</a>）で運営し、'
        . 'メーカー・仕入先から直送しています。取扱は' . number_format($s['products']) . '点・' . (int)$s['makers'] . 'メーカーです。</p>'
+       . kv_pv_video('X-Direct が安くできる理由を、58秒の動画にまとめました（音声が出ます）。')
        . '<p><a class="btn" href="' . kv_url('makers') . '">メーカーから探す</a> <a class="btn ghost" href="' . kv_url('contact') . '">見積もりを相談する</a></p>'
        . '<h2>よくある質問</h2><div class="faq">';
     foreach ($faq as $x) { echo '<h3>' . kv_e($x[0]) . '</h3><p>' . kv_e($x[1]) . '</p>'; }
     echo '</div></div>';
     kv_footer();
+}
+
+/**
+ * X-Direct の手数料の PV（58秒・音声つき）。2026-11-19 ユーザー指示「X-Direct紹介するPV」を安さの理由・商材募集に。
+ * 動画は kurage.exbridge.jp/pv/ に置いたもの（kvcart-sales/pv/deploy_pv.py）。読み込みは押したときだけ（preload=none）。
+ */
+function kv_pv_video(string $caption): string
+{
+    if (!kv_is_xdirect()) { return ''; }
+    return '<figure style="max-width:960px;margin:16px 0;padding:0"><video src="https://kurage.exbridge.jp/pv/kvcart-pv.mp4"'
+         . ' poster="https://kurage.exbridge.jp/pv/kvcart-pv-poster.jpg" controls playsinline preload="none"'
+         . ' style="display:block;width:100%;height:auto;border-radius:10px;background:#000"></video>'
+         . '<figcaption class="src" style="margin-top:6px">' . kv_e($caption) . '</figcaption></figure>';
 }
 
 /**
@@ -1266,6 +1280,7 @@ function kv_page_supplier(): void
        . '<p>X-Direct は、株式会社エクスブリッジ（名古屋）が運営する、工具・機械・計測機器・厨房機器・バッテリーなどの通信販売です。'
        . '工場・建設・農業・飲食店など、法人のお客様からのご注文が中心です。</p>'
        . '<p class="sup-makers">主な取り扱いメーカー：' . kv_e(implode('、', $makers)) . '</p></div>';
+    echo kv_pv_video('モールの手数料も、ネットショップの月額もかからない X-Direct の仕組みを、58秒の動画で紹介しています（音声が出ます）。');
 
     // 運営会社の信頼（2026-11-17 ユーザー指示: 2004年創業・X公式アカウント・フォロワーポータルのように見せる）。
     // 数字とアイコンは kv_data/supplier_social.json（kvcart-sales/supplier/build_social.py がフォロワーポータルから作る）。
