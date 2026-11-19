@@ -25,6 +25,7 @@ require __DIR__ . '/kv_cart.php';
 require __DIR__ . '/kv_stripe.php';
 require __DIR__ . '/kv_pages.php';
 require __DIR__ . '/kv_feed.php';   // Google ショッピングの商品フィード
+require __DIR__ . '/kv_guide.php';  // 選び方ガイド（/guide・2026-11-19）
 
 // **セッションは出力より前に始める。** kv_head() を呼んだ後に session_start() すると
 // 「headers already sent」でクッキーが出ず、CSRFが毎回外れる（実測で踏んだ）。
@@ -68,6 +69,9 @@ function kv_route(string $path, int $page): void
     if (preg_match('#^/product-list/(\d+)$#', $path, $m)) { kv_page_category((int)$m[1], $page); return; }
     // ---- 固定ページ ----
     if (preg_match('#^/page/(\d+)$#', $path, $m)) { kv_page_static('page' . $m[1], $path); return; }
+    // ---- 選び方ガイド（2026-11-19） ----
+    if ($path === '/guide') { kv_page_guide_index(); return; }
+    if (preg_match('#^/guide/([a-z0-9-]+)$#', $path, $m)) { kv_page_guide($m[1]); return; }
     switch ($path) {
         case '/sitemap.xml': kv_sitemap(); return;
         case '/robots.txt':  kv_robots(); return;
@@ -406,7 +410,7 @@ function kv_page_group(int $id, int $page): void
        . '<a href="' . kv_url('makers') . '">メーカー</a> › ' . kv_e($name) . '</nav>'
        . '<h1>' . kv_e($name) . 'の商品一覧</h1>';
     if ($page === 1) {
-        echo '<p class="lead">' . kv_e($lead) . '</p>';
+        echo '<p class="lead">' . kv_e($lead) . '</p>' . kv_guide_links($id);
         if ($fx['cats']) {
             echo '<h2>' . kv_e($name) . 'の取扱分類</h2><div class="makers">';
             foreach ($fx['cats'] as $c) {
@@ -630,7 +634,7 @@ function kv_page_product(int $id): void
        . ($mk ? ' › <a href="' . kv_url('product-group/' . (int)$mk['id']) . '">' . kv_e($mk['name']) . '</a>' : '')
        . ($cat ? ' › <a href="' . kv_url('product-list/' . (int)$cat['id']) . '">' . kv_e($cat['name']) . '</a>' : '')
        . '</nav>';
-    echo '<h1>' . kv_e($p['name']) . '</h1><p class="lead">' . kv_e($summary) . '</p><div class="pd">';
+    echo '<h1>' . kv_e($p['name']) . '</h1><p class="lead">' . kv_e($summary) . '</p>' . kv_guide_links((int)$p['maker_id'], (int)$p['id']) . '<div class="pd">';
     echo '<div class="img">' . ($p['image_url'] ? '<img src="' . kv_e(kv_img($p['image_url'])) . '" alt="' . kv_e($p['name']) . '">' : '') . '</div>';
     echo '<div><div class="panel">';
     if (($mdl = kv_model_display($p['model_number'], $p['name'])) !== '') { echo '<p class="src">型番 ' . kv_e($mdl) . '</p>'; }
@@ -868,6 +872,10 @@ function kv_sitemap(): void
     }
     if (kv_is_xdirect()) { $u[] = ['/supplier', '2026-11-16']; $u[] = ['/why-low-price', '2026-11-17']; }
     if (kv_systems()) { $u[] = ['/business-systems', '2026-11-17']; }
+    if (kv_guides()) {
+        $u[] = ['/guide', max(array_map(fn($d) => (string)($d['checked_at'] ?? '2026-11-19'), kv_guides()))];
+        foreach (kv_guides() as $gs => $gd) { $u[] = ['/guide/' . $gs, (string)($gd['checked_at'] ?? '2026-11-19')]; }
+    }
     header('Content-Type: application/xml; charset=utf-8');
     $o = kv_origin();
     echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
@@ -916,6 +924,7 @@ function kv_llms(): void
        . "- [お問い合わせ]($o/contact): 掲載していない商品の見積もりも受け付けます\n"
        . (kv_is_xdirect() ? "- [商材募集]($o/supplier): 工具・機械・設備のメーカー・問屋さまの商材を募集（メーカー直送で販売）\n" : '')
        . (kv_systems() ? "- [業務システム]($o/business-systems): 運営会社の業務システム（受発注・EC・グループウェアなど、オンプレミス・買い切り）。購入は Kurage App Store\n" : '') . "\n"
+       . (kv_guides() ? "## 選び方ガイド\n\n" . implode('', array_map(fn($gs, $gd) => '- [' . $gd['title'] . "]($o/guide/$gs): " . ($gd['desc'] ?? '') . "\n", array_keys(kv_guides()), kv_guides())) . "\n" : '')
        . "## メーカー\n\n";
     foreach (kv_makers() as $mk) {
         echo '- [' . $mk['name'] . "の商品一覧]($o/product-group/" . (int)$mk['id'] . ")\n";
