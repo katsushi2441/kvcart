@@ -236,11 +236,14 @@ function kv_doc_pdf(int $oid, string $type, array $opt = []): string
     };
     $c .= $thead($y); $y -= 22;
     foreach ($rows as [$lines, $qty, $unit, $amt]) {
-        $h = 13 * count($lines) + 4;
+        $h = 13 * count($lines) + 5;
         if ($y - $h < $bottom) { $pages[] = $c; $page++; $c = ''; $y = $topN; $c .= $thead($y); $y -= 22; }
         foreach ($lines as $i => $ln) { $c .= $T(46, $y - 13 * $i, 9, $ln); }
         $c .= $R(395, $y, 9, (string)$qty) . $R(470, $y, 9, number_format($unit)) . $R(550, $y, 9, number_format($amt));
-        $y -= $h; $c .= $L(40, $y + 6, 555, $y + 6, 0.3);
+        // 区切り線は、この行の最後の文字の少し下に引き、次の行はその下から書く
+        // （以前は次の行の基準から +6 の位置に引いていて、商品名が折り返すと次の行の文字に線が重なった・2026-11-20 中村組の領収書）
+        $lineY = $y - 13 * (count($lines) - 1) - 5;
+        $c .= $L(40, $lineY, 555, $lineY, 0.3); $y = $lineY - 13;
     }
     // 合計（税率ごと）
     $y -= 8;
