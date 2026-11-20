@@ -224,6 +224,22 @@ function kv_maker_leadtime($makerId): ?array
 }
 
 /**
+ * 商品ごとの納期（2026-11-20 ユーザー指示「価格表に無い商品は在庫0・納期お問い合わせくださいに」）。
+ * kv_data/product_leadtime.json: {"商品ID": {"min": 営業日, "max": 営業日, "note": "表示文"}}。商品の指定があればメーカーの指定より優先。
+ */
+function kv_product_leadtime(array $p): ?array
+{
+    static $all = null;
+    if ($all === null) {
+        $f = KV_DATA . '/product_leadtime.json';
+        $all = is_file($f) ? (json_decode((string)file_get_contents($f), true) ?: []) : [];
+    }
+    $v = $all[(string)(int)($p['id'] ?? 0)] ?? null;
+    if (is_array($v) && (int)($v['max'] ?? 0) > 0) { return $v; }
+    return kv_maker_leadtime($p['maker_id'] ?? 0);
+}
+
+/**
  * メーカーごと・商品ごとのお支払い方法（2026-11-20 ユーザー指示）。
  * kv_data/payment_rules.json: {"makers": {"メーカーID": "bank"}, "products": {"商品ID": "bank"|"stripe"|"all"}}
  *   bank = 銀行振込のみ／stripe = クレジットカードのみ／all = 制限なし（メーカーの指定を商品だけ外すとき）

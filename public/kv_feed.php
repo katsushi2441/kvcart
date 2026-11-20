@@ -49,6 +49,8 @@ function kv_gshop_build(string $path): array
     // 広告に出さないメーカー（custom_label_1 = noad）。在庫0・納期お問い合わせで移したメーカーは、無料掲載には載せて広告からは外す（2026-11-20 ユーザー指示）
     // kv_data/gshop_noad_makers.json = {"メーカーID": "メーカー名"}
     $noad = is_file(KV_DATA . '/gshop_noad_makers.json') ? (json_decode((string)file_get_contents(KV_DATA . '/gshop_noad_makers.json'), true) ?: []) : [];
+    // 商品ごとに広告から外す指定（2026-11-20）。kv_data/gshop_noad_products.json = {"商品ID": "メモ"}
+    $noadP = is_file(KV_DATA . '/gshop_noad_products.json') ? (json_decode((string)file_get_contents(KV_DATA . '/gshop_noad_products.json'), true) ?: []) : [];
     $ovr = is_file(KV_DATA . '/gshop_override.json') ? (json_decode((string)file_get_contents(KV_DATA . '/gshop_override.json'), true) ?: []) : [];
     $base = rtrim(defined('KV_ORIGIN') ? KV_ORIGIN : kv_site_url(''), '/');
     $tmp = $path . '.tmp';
@@ -92,9 +94,9 @@ function kv_gshop_build(string $path): array
               . (!empty($ov['color']) ? '<g:color>' . $x($ov['color']) . '</g:color>' : '')
               . (isset($cats[(int)$p['category_id']]) ? '<g:product_type>' . $x(($mk !== '' ? '' : '') . $cats[(int)$p['category_id']]) . '</g:product_type>' : '')
               . (isset($sold[(string)$p['id']]) ? '<g:custom_label_0>sold</g:custom_label_0>' : '<g:custom_label_0>unsold</g:custom_label_0>')
-              . (isset($noad[(string)(int)$p['maker_id']]) ? '<g:custom_label_1>noad</g:custom_label_1>' : '<g:custom_label_1>ad</g:custom_label_1>')
+              . (isset($noad[(string)(int)$p['maker_id']]) || isset($noadP[(string)(int)$p['id']]) ? '<g:custom_label_1>noad</g:custom_label_1>' : '<g:custom_label_1>ad</g:custom_label_1>')
               // メーカーごとの納期（受注生産など）。Merchant Center の配送設定の準備日数より優先される
-              . (($lt = kv_maker_leadtime($p['maker_id'])) ? '<g:min_handling_time>' . (int)($lt['min'] ?? $lt['max']) . '</g:min_handling_time><g:max_handling_time>' . (int)$lt['max'] . '</g:max_handling_time>' : '')
+              . (($lt = kv_product_leadtime($p)) ? '<g:min_handling_time>' . (int)($lt['min'] ?? $lt['max']) . '</g:min_handling_time><g:max_handling_time>' . (int)$lt['max'] . '</g:max_handling_time>' : '')
               . '<g:shipping><g:country>JP</g:country><g:price>0 JPY</g:price></g:shipping>'
               . "</item>\n";
         if (isset($sold[(string)$p['id']])) { $skip['売れた商品']++; }

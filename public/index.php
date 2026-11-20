@@ -612,7 +612,7 @@ function kv_page_product(int $id): void
     $pfaq = [
         [$label . 'の価格はいくらですか？', $incl !== null ? '税込' . number_format($incl) . '円（本体' . number_format((int)$p['price']) . '円）です。'
                                                    : '価格はお問い合わせください。ご希望の数量と送り先をお知らせいただければ、価格と納期をご案内します。'],
-        [$label . 'の納期はどのくらいですか？', ($lt0 = kv_maker_leadtime($p['maker_id'])) && trim((string)($lt0['note'] ?? '')) !== ''
+        [$label . 'の納期はどのくらいですか？', ($lt0 = kv_product_leadtime($p)) && trim((string)($lt0['note'] ?? '')) !== ''
                 ? (string)$lt0['note'] . '。ご注文のあと、メーカーに確認した納期をメールでご連絡します。'
                   . (function_exists('kv_stripe_ready') && kv_stripe_ready() ? 'クレジットカードは、ご注文の時点ではお支払い枠を確保する仮売上とし、在庫と納期を確かめて商品を手配してから売上を確定します。' : '')
                 : 'ご注文・お問い合わせのあと、メーカー・仕入先に在庫と納期を確認してメールでご連絡します。メーカーの欠品などで納期が長くかかる場合は、ご注文のあと納期をメールでお知らせし、ご了承をいただいてから手配します。ご了承いただけない場合はキャンセルできます。'
@@ -658,7 +658,7 @@ function kv_page_product(int $id): void
     if (($sl = kv_stock_label($p)) !== '') {
         echo '<p class="src"' . (kv_stock_state($p) === 'low' ? ' style="color:#b45309;font-weight:700"' : '') . '>' . kv_e($sl) . '</p>';
     }
-    if ($incl !== null && ($lt = kv_maker_leadtime($p['maker_id'])) && trim((string)($lt['note'] ?? '')) !== '') {
+    if ($incl !== null && ($lt = kv_product_leadtime($p)) && trim((string)($lt['note'] ?? '')) !== '') {
         echo '<p class="src" style="color:#b45309;font-weight:700">納期：' . kv_e((string)$lt['note']) . '</p>';
     }
     // お支払い方法の指定（メーカー・商品ごと・2026-11-20）

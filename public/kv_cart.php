@@ -369,7 +369,7 @@ function kv_cart_leadtime_lines(array $r): array
     $out = [];
     foreach ($r['lines'] as $l) {
         $p = $l['product'];
-        if (function_exists('kv_maker_leadtime') && ($lt = kv_maker_leadtime($p['maker_id'] ?? 0)) && trim((string)($lt['note'] ?? '')) !== '') {
+        if (function_exists('kv_product_leadtime') && ($lt = kv_product_leadtime($p)) && trim((string)($lt['note'] ?? '')) !== '') {
             $out[] = [(string)$p['name'], (string)$lt['note']];
         }
     }
