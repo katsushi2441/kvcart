@@ -294,3 +294,11 @@ function kv_cart_payment_methods(array $r): array
     }
     return ['methods' => $m ?: ['bank'], 'restricted' => $why];
 }
+
+/** 商品ごとの価格の見出し（kv_data/product_price_badge.json {"商品ID":"文言"}）。無ければ空。 */
+function kv_product_price_badge(array $p): string
+{
+    static $all = null;
+    if ($all === null) { $f = KV_DATA . '/product_price_badge.json'; $all = is_file($f) ? (json_decode((string)file_get_contents($f), true) ?: []) : []; }
+    return trim((string)($all[(string)(int)($p['id'] ?? 0)] ?? ''));
+}

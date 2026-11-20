@@ -649,6 +649,10 @@ function kv_page_product(int $id): void
         if ($p['list_price'] && (int)$p['list_price'] > (int)$p['price']) {
             echo '<p class="strike">メーカー希望小売価格 ' . number_format((int)$p['list_price']) . '円</p>';
         }
+        // 商品ごとの価格の見出し（kv_data/product_price_badge.json {"商品ID":"文言"}・2026-11-21 MX-46「期間限定 銀行振込のみの特別価格」）
+        if (($bd = kv_product_price_badge($p)) !== '') {
+            echo '<p class="pbadge">' . kv_e($bd) . '</p>';
+        }
         echo '<p class="price-big">' . number_format($incl) . '円<small> 税込（本体 '
            . number_format((int)$p['price']) . '円）</small></p>';
     }
