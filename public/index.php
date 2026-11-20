@@ -705,6 +705,11 @@ function kv_page_product(int $id): void
             }
             $opt_html .= '</select></label>';
         }
+        // 選択肢の下の注意書き（variations の "note"）。選択肢に無い型式はお問い合わせへ（2026-11-20 有光 SG50-40）
+        if ($opt_html !== '' && trim((string)($vjson['note'] ?? '')) !== '') {
+            $opt_html .= '<p class="src" style="margin:0 0 10px;color:#b45309;font-weight:700">' . kv_e(trim((string)$vjson['note']))
+                       . ' <a href="' . kv_url('contact') . '?pid=' . (int)$p['id'] . '">お問い合わせはこちら</a></p>';
+        }
         if ($opt_html !== '' && !empty($_GET['need_option'])) {
             $opt_html = '<div class="alert">オプションを選んでから「カートに入れる」を押してください。</div>' . $opt_html;
         }
