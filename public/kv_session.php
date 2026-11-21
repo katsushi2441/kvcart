@@ -22,7 +22,31 @@ function kv_session(): void
                                    'httponly' => true, 'samesite' => 'Lax',
                                    'secure' => !empty($_SERVER['HTTPS'])]);
         session_start();
+        if ($life > 0 && mt_rand(1, 200) === 1) { kv_session_sweep(); }
     }
+}
+
+/**
+ * 中身の無いセッションのファイルを掃除する。
+ * 保存期間を365日にしたら、クローラーの1回ごとに空（0バイト）か CSRF だけ（45バイト）のファイルができ、
+ * 1日6万個ずつたまって heteml のファイル数の上限（100万）に当たった（2026-11-22）。
+ * ログイン・カートの中身が入ったもの（46バイト以上）は消さない。1日以上前のものだけ・1回に最大3000個。
+ */
+function kv_session_sweep(): void
+{
+    $dir = (defined('KV_DATA') ? KV_DATA : __DIR__ . '/kv_data') . '/sessions';
+    $h = @opendir($dir);
+    if (!$h) { return; }
+    $old = time() - 86400; $n = 0;
+    while (($f = readdir($h)) !== false && $n < 3000) {
+        if (strncmp($f, 'sess_', 5) !== 0) { continue; }
+        $p = $dir . '/' . $f;
+        $st = @stat($p);
+        if ($st && $st['size'] < 46 && $st['mtime'] < $old && $p !== $dir . '/sess_' . session_id()) {
+            if (@unlink($p)) { $n++; }
+        }
+    }
+    closedir($h);
 }
 
 function kv_csrf(): string
