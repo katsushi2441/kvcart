@@ -115,7 +115,10 @@ function kv_page_gshop_feed(): void
     $path = KV_DATA . '/gshop_feed.xml';
     $last = (string)kv_db()->query('SELECT MAX(updated_at) FROM products')->fetchColumn();
     $age = is_file($path) ? time() - filemtime($path) : PHP_INT_MAX;
-    if ($age > 6 * 3600 || ($last !== '' && strtotime($last) > filemtime($path))) {
+    // 取り扱い終了（商品の削除）は updated_at を動かさないので、商品の変更記録の更新でも作り直す（2026-11-21）
+    $plog = KV_DATA . '/product_log.jsonl';
+    if ($age > 6 * 3600 || ($last !== '' && strtotime($last) > filemtime($path))
+        || (is_file($plog) && filemtime($plog) > filemtime($path))) {
         @set_time_limit(120);
         kv_gshop_build($path);
     }
