@@ -1076,8 +1076,10 @@ function kv_page_systems(): void
 /** Amazon・楽天・Yahoo!ショッピングより安くできる理由（1文）。「最安」とは書かない（相場より高い商品もあるため・2026-11-17）。 */
 function kv_low_price_reason(): string
 {
-    return kv_shop('name') . 'はAmazon・楽天市場・Yahoo!ショッピングなどのモールに出店せず、自社開発のシステムで運営しています。'
-         . 'モールに払う販売手数料や広告費・ポイントの原資、ネットショップサービスの月額利用料がかからないので、その分を価格に回しています。';
+    // AIが運営するから安い、を先に（2026-11-23 ユーザー指示「AI完全対応だから安くできるとアピールしたい」）
+    return kv_shop('name') . 'は、商品登録・受発注・お問い合わせ対応などのネット通販の運用を、人ではなくAIが行う自社開発のシステムで運営しています。'
+         . 'AIが運用することで人件費を大幅に削減し、AIのマーケティングで広告宣伝費も削減しています。'
+         . 'さらに、Amazon・楽天市場・Yahoo!ショッピングなどのモールに出店していないので、販売手数料やポイントの原資、ネットショップサービスの月額利用料もかかりません。その分を価格に回しています。';
 }
 
 /**
@@ -1090,6 +1092,7 @@ function kv_page_why_low_price(): void
     $s = kv_stats(); $name = kv_shop('name'); $o = kv_origin();
     $faq = [
         ['なぜAmazon・楽天・Yahoo!ショッピングより安くできるのですか？', kv_low_price_reason()],
+        ['AIが運営すると、なぜ安くなるのですか？', '商品登録、サイトのデザイン、受注と発注、お問い合わせへの対応といったネット通販の運用を、人ではなくAIが行うので、人件費を大幅に削減できます。集客もAIが検索やSNS、AI検索に向けて行うので、広告宣伝費も削減できます。削減できた分を、商品の価格に回しています。'],
         ['モールの手数料はどのくらいかかるのですか？', 'モールで売ると、売上に応じた販売手数料（カテゴリや契約によって売上の数%〜十数%）に加えて、決済手数料・ポイントの原資・広告費などがかかり、商品の価格に上乗せされます。' . $name . 'はモールに出店していないので、これらがかかりません。'],
         ['どの商品も一番安いのですか？', 'いいえ。手数料がかからない分を価格に回していますが、すべての商品がほかのお店より安いとは限りません。お見積もりのご相談はお問い合わせからどうぞ。'],
         ['安いのに品質や保証は大丈夫ですか？', 'メーカー・仕入先から直送する新品の正規品です。メーカー保証のある商品は、メーカーの保証が受けられます。'],
@@ -1097,7 +1100,7 @@ function kv_page_why_low_price(): void
         ['支払い方法は？', '銀行振込（前払い。在庫・納期を確認してから振込先をご案内します）と、クレジットカードがご利用いただけます。インボイス（適格請求書）にも対応しています。'],
     ];
     $title = 'Amazon・楽天・Yahoo!ショッピングより安くできる理由';
-    $desc = mb_substr(kv_low_price_reason() . '機械工具・計測機器・厨房機器・バッテリーなど' . number_format($s['products']) . '点をメーカー直送で。', 0, 160);
+    $desc = mb_substr(kv_low_price_reason(), 0, 160);
     $jsonld = ['@context' => 'https://schema.org', '@graph' => [
         ['@type' => 'WebPage', 'name' => $title, 'url' => $o . '/why-low-price', 'description' => $desc, 'isPartOf' => ['@type' => 'WebSite', 'name' => $name, 'url' => $o . '/']],
         ['@type' => 'FAQPage', 'mainEntity' => array_map(fn($x) => ['@type' => 'Question', 'name' => $x[0], 'acceptedAnswer' => ['@type' => 'Answer', 'text' => $x[1]]], $faq)],
@@ -1106,6 +1109,13 @@ function kv_page_why_low_price(): void
     echo '<div class="wrap"><nav class="crumb"><a href="' . kv_url('') . '">トップ</a> › 安くできる理由</nav>'
        . '<h1>' . kv_e($title) . '</h1>'
        . '<p class="lead">' . kv_e(kv_low_price_reason()) . '</p>'
+       // 3つの枠は見出し1行・説明2行でそろえる（2026-11-23 ユーザー指摘「揃えないと汚い」）
+       . '<h2>AIが運営しているから安い</h2>'
+       . '<div class="aicost">'
+       . '<div class="panel"><b>人件費を大幅に削減</b><span>商品登録・受発注・問い合わせ対応を、</span><span>人ではなくAIが行います</span></div>'
+       . '<div class="panel"><b>広告宣伝費を削減</b><span>AIのマーケティングで、</span><span>広告に頼らずお客様を集めます</span></div>'
+       . '<div class="panel"><b>AIに完全対応したシステム</b><span>AIがすべて操作できるECを、</span><span>自社で開発して運営しています</span></div>'
+       . '</div>'
        . '<h2>モールで買うと価格に含まれているもの</h2>'
        . '<div class="makers" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">'
        . '<div class="panel"><b>販売手数料</b><br><span class="src">売上に応じてモールに払う手数料。カテゴリや契約によって売上の数%〜十数%。</span></div>'
@@ -1114,7 +1124,7 @@ function kv_page_why_low_price(): void
        . '<div class="panel"><b>ネットショップの月額利用料</b><br><span class="src">出店料やネットショップ作成サービスの月額。</span></div>'
        . '</div>'
        . '<p>' . kv_e($name) . 'は、これらがかからない自社開発のシステム（<a href="https://kappstore.exbridge.jp/app.php?id=754c7ddb5f1c8f26#ref=exdirect-why">Kurage Vibe-Cart</a>）で運営し、'
-       . 'メーカー・仕入先から直送しています。取扱は' . number_format($s['products']) . '点・' . (int)$s['makers'] . 'メーカーです。</p>'
+       . 'メーカー・仕入先から直送しています。</p>'
        . kv_pv_video('X-Direct が安くできる理由を、58秒の動画にまとめました（音声が出ます）。')
        . '<p><a class="btn" href="' . kv_url('makers') . '">メーカーから探す</a> <a class="btn ghost" href="' . kv_url('contact') . '">見積もりを相談する</a></p>'
        . '<h2>よくある質問</h2><div class="faq">';
