@@ -172,7 +172,29 @@ def main():
         h.req("/member/login", {"csrf": h.csrf(pg), "email": guest, "next": "member"})
     sent = db.execute("SELECT SUM(sent) FROM member_login_log WHERE email=?", (guest,)).fetchone()[0]
     check(sent == 3, f"同じアドレスへは1時間に3通まで（{sent}通）")
-    # 10. ヘッダーと FAQ
+    # 10. カートの引き継ぎ: ブラウザAでカートに入れてリンクを頼み、ブラウザBで開く → Bのカートに入る
+    db.execute("DELETE FROM member_login_log")
+    db.commit()
+    A = Browser()
+    _, pg = A.req("/product/%d" % p["id"])
+    A.req("/cart", {"csrf": A.csrf(pg), "add": p["id"], "qty": 3})
+    _, pg = A.req("/cart/customer")
+    A.req("/member/login", {"csrf": A.csrf(pg), "email": email, "next": "cart/customer"})
+    tok = last_link()
+    B = Browser()
+    _, pg = B.req("/member/auth?t=" + tok)
+    url, pg = B.req("/member/auth", {"csrf": B.csrf(pg), "t": tok})
+    _, pg = B.req("/cart")
+    check(f'name="qty_of[{p["id"]}]" value="3"' in pg, "別のブラウザでリンクを開いても、カートの商品が引き継がれる（数量3）")
+    # 同じブラウザで開いたときは2倍にならない
+    _, pg = A.req("/member/login")
+    A.req("/member/login", {"csrf": A.csrf(pg), "email": email, "next": "member"})
+    tok = last_link()
+    _, pg = A.req("/member/auth?t=" + tok)
+    A.req("/member/auth", {"csrf": A.csrf(pg), "t": tok})
+    _, pg = A.req("/cart")
+    check(f'name="qty_of[{p["id"]}]" value="3"' in pg, "同じブラウザで開いても数量は2倍にならない（3のまま）")
+    # 11. ヘッダーと FAQ
     _, pg = Browser().req("/")
     check("/member/login\"" in pg, "ヘッダーにログインが出る")
     _, pg = Browser().req("/member-login")

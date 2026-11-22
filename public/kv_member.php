@@ -69,6 +69,8 @@ function kv_member_schema(): void
     );
     ");
     $has = fn(string $t, string $c) => in_array($c, array_column(kv_db()->query("PRAGMA table_info($t)")->fetchAll(), 'name'), true);
+    // リンクを頼んだときのカート（別のブラウザ・端末でリンクを開いてもカートを引き継ぐため・2026-11-22）
+    if (!$has('member_tokens', 'cart')) { kv_db()->exec('ALTER TABLE member_tokens ADD COLUMN cart TEXT'); }
     if (!$has('orders', 'member_id')) {
         kv_db()->exec('ALTER TABLE orders ADD COLUMN member_id INTEGER');
         kv_db()->exec('CREATE INDEX IF NOT EXISTS ix_orders_member ON orders(member_id)');
@@ -238,8 +240,10 @@ function kv_member_send_link(string $email, string $next): void
     $db->exec("DELETE FROM member_tokens WHERE expires_at < '" . date('Y-m-d H:i:s', time() - 86400) . "'");
     if (!$send) { return; }
     $token = bin2hex(random_bytes(24));
-    $db->prepare('INSERT INTO member_tokens (hash,member_id,created_at,expires_at,next) VALUES (?,?,?,?,?)')
-       ->execute([hash('sha256', $token), (int)$m['id'], date('Y-m-d H:i:s'), date('Y-m-d H:i:s', time() + KV_MEMBER_TOKEN_MIN * 60), $next]);
+    $cart = kv_cart_get();
+    $db->prepare('INSERT INTO member_tokens (hash,member_id,created_at,expires_at,next,cart) VALUES (?,?,?,?,?,?)')
+       ->execute([hash('sha256', $token), (int)$m['id'], date('Y-m-d H:i:s'), date('Y-m-d H:i:s', time() + KV_MEMBER_TOKEN_MIN * 60), $next,
+                  $cart ? json_encode($cart) : null]);
     $url = kv_abs(kv_url('member/auth')) . '?t=' . $token;
     $shop = kv_shop('name');
     $body = ($m['name'] ? $m['name'] . " 様\n\n" : '')
@@ -321,6 +325,17 @@ function kv_page_member_auth(): void
             session_regenerate_id(true);
             $_SESSION['member_id'] = (int)$row['member_id'];
             unset($_SESSION['checkout']);   // 前の入力ではなく、会員の情報から始める
+            // リンクを頼んだときのカートを、開いたブラウザのカートに足す。同じブラウザなら同じ中身なので、
+            // 数量は足し算せず商品ごとに多いほうを取る（2倍にしない）。価格・在庫はカートを表示するときに DB から引き直す
+            $saved = json_decode((string)($row['cart'] ?? ''), true);
+            if (is_array($saved) && $saved) {
+                $c = kv_cart_get();
+                foreach ($saved as $k => $q) {
+                    if (!preg_match('/^\d+(\|\d+(-\d+)*)?$/', (string)$k)) { continue; }
+                    $c[(string)$k] = min(99, max((int)($c[(string)$k] ?? 0), (int)$q));
+                }
+                kv_cart_set($c);
+            }
             kv_db()->prepare('UPDATE members SET last_login_at=? WHERE id=?')->execute([date('Y-m-d H:i:s'), (int)$row['member_id']]);
             header('Location: ' . kv_url(kv_member_safe_next((string)$row['next'])));
             return;
