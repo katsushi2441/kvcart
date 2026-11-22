@@ -137,6 +137,8 @@ function kv_order_create(array $cart, array $post): int
     if (PHP_SAPI !== 'cli' && empty($post['_admin_entry'])) { kv_order_after_create($oid); }
     // 在庫数を管理する商品は、注文で在庫を減らす（kv_stock.php）。管理画面の代理入力は通知しない（おちゃのこネットと同じ）
     kv_stock_apply_order($oid, -1, defined('KV_ADMIN') ? '受注登録' : 'ショップで購入', !defined('KV_ADMIN'));
+    // 会員とつなぐ・会員登録・お届け先の保存（kv_member.php）。管理画面の代理入力はつながない
+    if (empty($post['_admin_entry'])) { kv_member_after_order($oid, $post); }
     // カード払いは、決済が終わってから受付メールを送る（2026-11-17 ユーザー指示「カード決済してから注文受付の自動メール」）。
     // 決済の完了は Stripe の通知（kv_stripe_handle の checkout.session.completed）で受け、order_paid_card を送る
     $o = kv_order($oid);
@@ -467,3 +469,4 @@ function kv_mail_send(int $oid, string $key): bool
 
 require_once __DIR__ . '/kv_ops.php';   // ブラックリスト・お問い合わせ・帳票（2026-11-17）
 require_once __DIR__ . '/kv_stock.php';   // 在庫管理（2026-11-17）
+require_once __DIR__ . '/kv_member.php';   // 会員（メールのリンクでログイン・2026-11-22）

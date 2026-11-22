@@ -243,6 +243,9 @@ function kv_header(): void
        . '<form class="search" method="get" action="' . kv_url('search') . '">'
        . '<input type="text" name="q" value="' . $q . '" placeholder="商品名・型番・JANで検索" aria-label="商品検索">'
        . '<button class="btn" type="submit">検索</button></form>'
+       . (function_exists('kv_member_current') && kv_member_current()
+          ? '<a class="btn ghost" href="' . kv_url('member') . '">マイページ</a>'
+          : '<a class="btn ghost" href="' . kv_url('member/login') . '">ログイン</a>')
        . '<a class="btn ghost" href="' . kv_url('cart') . '">カート</a>'
        . '<img class="mascot" src="' . kv_url('img/brand/kurage-mascot.webp') . '" width="265" height="300" alt="Kurage">'
        . '</div></header>' . kv_campaign_bar() . kv_value_strip();

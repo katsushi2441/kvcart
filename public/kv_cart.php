@@ -2,8 +2,8 @@
 /**
  * Kurage Vibe-Cart — カートと注文。
  *
- * カートはセッションに置く（会員機能は作らない。おちゃのこネットの /member-login は
- * 過去データを引き継がない方針なので、ゲスト購入だけにする）。
+ * カートはセッションに置く。会員は kv_member.php（メールのリンクでログイン・2026-11-22 から）。
+ * 会員でなくても買える（ゲスト購入）。会員がログインしていれば、お客様情報とお届け先を呼び出す。
  * 注文は SQLite の orders / order_items に入れ、受注管理から扱う。
  *
  * 決済は **銀行振込を既定**にする。Stripe は鍵が入ったときだけボタンを出す（kbilling と同じ）。
@@ -243,13 +243,16 @@ function kv_page_customer(): void
     $r = kv_cart_lines();
     if (!$r['lines']) { header('Location: ' . kv_url('cart')); return; }
     $err = [];
-    $in = $_SESSION['checkout'] ?? [];
+    $mem = kv_member_current();
+    // 会員がログインしていれば、ご登録の情報から始める（入力の途中ならその入力）
+    $in = $_SESSION['checkout'] ?? ($mem ? kv_member_checkout_values($mem) + ['_member_save' => '1'] : []);
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!kv_csrf_ok()) { http_response_code(400); echo '不正なリクエストです'; return; }
         $in = $_POST;
         $err = kv_checkout_validate($_POST);
         if (!$err) {
-            $_SESSION['checkout'] = $_POST;
+            // 会員の番号はセッションから入れる（画面から送られた値は使わない）。カード払いでは pending_checkouts に入り、決済後の注文作成に渡る
+            $_SESSION['checkout'] = ['_member_id' => $mem ? (int)$mem['id'] : 0] + array_diff_key($_POST, ['_member_id' => 1]);
             header('Location: ' . kv_url('cart/delivery'));
             return;
         }
@@ -260,6 +263,13 @@ function kv_page_customer(): void
        . '<h1>ショッピングカート</h1>';
     kv_steps(1);
     echo '<h2>お客様情報の入力</h2>';
+    if ($mem) {
+        echo '<div class="note">会員としてログインしています（' . kv_e($mem['email']) . '）。ご登録の情報を入れてあります。'
+           . ' <a href="' . kv_url('member') . '">マイページ</a></div>';
+    } elseif (!$err) {
+        echo kv_member_login_form('cart/customer');
+        echo '<h3 style="margin-top:22px">初めての方・会員登録をされていない方</h3>';
+    }
     if ($err) { echo '<div class="alert">' . implode('<br>', array_map('kv_e', $err)) . '</div>'; }
     echo '<p class="src"><span class="req">必須</span> のマークのついている項目は必ずご記入ください。</p>'
        . '<form method="post"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
@@ -284,7 +294,12 @@ function kv_page_customer(): void
     echo '<tr><th>メールマガジン</th><td>'
        . '<label><input type="radio" name="dm" value="1"' . ($dm === '1' ? ' checked' : '') . '> 受け取る</label>　'
        . '<label><input type="radio" name="dm" value="0"' . ($dm === '0' ? ' checked' : '') . '> 受け取らない</label>'
-       . '</td></tr></table>'
+       . '</td></tr>'
+       . '<tr><th>' . ($mem ? 'ご登録の情報' : '会員登録') . '</th><td><label><input type="checkbox" name="_member_save" value="1"'
+       . (!empty($in['_member_save']) ? ' checked' : '') . '> '
+       . ($mem ? 'ご登録の情報を、この内容に更新する'
+               : '会員登録する<div class="hint">次回から、メールアドレスを入れるだけでご住所などを呼び出せます。パスワードは必要ありません。</div>')
+       . '</label></td></tr></table>'
        . '<p style="margin-top:16px"><a class="btn gray" href="' . kv_url('cart') . '">カートに戻る</a> '
        . '<button class="btn" type="submit">次へ進む</button></p></form></div>';
     kv_footer();
@@ -301,9 +316,25 @@ function kv_page_delivery(): void
     // メーカー・商品ごとのお支払い方法の指定（kv_data/payment_rules.json・2026-11-20）
     $pay = kv_cart_payment_methods($r);
     if (!kv_stripe_ready()) { $pay['methods'] = array_values(array_diff($pay['methods'], ['stripe'])) ?: ['bank']; }
+    $mem = !empty($c['_member_id']) ? kv_member_current() : null;
+    $addrs = $mem ? kv_member_addresses((int)$mem['id']) : [];
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!kv_csrf_ok()) { http_response_code(400); echo '不正なリクエストです'; return; }
+        // マイページに保存したお届け先を選んだとき（addr:<ID>）は、その住所を「別の住所」の欄に入れる
+        if (preg_match('/^addr:(\d+)$/', (string)($_POST['ship_to'] ?? ''), $am)) {
+            foreach ($addrs as $a) {
+                if ((int)$a['id'] === (int)$am[1]) {
+                    $_POST = ['ship_to' => 'other', 's_name' => trim($a['company'] . ' ' . $a['name']), 's_zip' => $a['zip'], 's_pref' => $a['pref'],
+                              's_address1' => $a['address1'], 's_address2' => $a['address2'], 's_address3' => $a['address3'], 's_tel' => $a['tel'],
+                              '_addr_id' => (string)(int)$a['id'], '_addr_save' => ''] + $_POST;
+                    break;
+                }
+            }
+            if (($_POST['ship_to'] ?? '') !== 'other') { $_POST['ship_to'] = 'same'; }
+        }
         $_SESSION['checkout'] = array_merge($c, [
+            '_addr_save' => !empty($_POST['_addr_save']) ? '1' : '',
+            '_addr_id' => (string)(int)($_POST['_addr_id'] ?? 0),   // 保存した届け先を選んだとき（その届け先の使った日だけ更新する）
             'ship_to' => (string)($_POST['ship_to'] ?? 'same'),
             'payment' => in_array((string)($_POST['payment'] ?? ''), $pay['methods'], true) ? (string)$_POST['payment'] : $pay['methods'][0],
             'note' => (string)($_POST['note'] ?? ''),
@@ -323,8 +354,13 @@ function kv_page_delivery(): void
        . '<div class="src" style="margin:6px 0 12px 24px">'
        . kv_e(($c['zip'] ?? '') . ' ' . ($c['pref'] ?? '') . ($c['address1'] ?? '')
               . ($c['address2'] ?? '') . ' ' . ($c['address3'] ?? '')) . '<br>'
-       . kv_e($c['name'] ?? '') . ' 様</div>'
-       . '<label><input type="radio" name="ship_to" value="other"> 別の住所へ届ける</label>'
+       . kv_e($c['name'] ?? '') . ' 様</div>';
+    foreach ($addrs as $a) {
+        echo '<label><input type="radio" name="ship_to" value="addr:' . (int)$a['id'] . '"> '
+           . kv_e(trim($a['company'] . ' ' . $a['name'])) . ' 様へ届ける</label>'
+           . '<div class="src" style="margin:2px 0 10px 24px">' . kv_e(kv_member_address_text($a)) . ($a['tel'] ? '　' . kv_e($a['tel']) : '') . '</div>';
+    }
+    echo '<label><input type="radio" name="ship_to" value="other"> ' . ($addrs ? '新しい住所へ届ける' : '別の住所へ届ける') . '</label>'
        . '<table class="formtbl" style="margin-top:10px">'
        . '<tr><th>お届け先 お名前</th><td><input type="text" name="s_name"></td></tr>'
        . '<tr><th>郵便番号</th><td><input type="text" name="s_zip"></td></tr>'
@@ -334,7 +370,10 @@ function kv_page_delivery(): void
        . '<tr><th>市区町村</th><td><input type="text" name="s_address1"></td></tr>'
        . '<tr><th>番地</th><td><input type="text" name="s_address2"></td></tr>'
        . '<tr><th>ビル名など</th><td><input type="text" name="s_address3"></td></tr>'
-       . '<tr><th>電話番号</th><td><input type="text" name="s_tel"></td></tr></table></div>';
+       . '<tr><th>電話番号</th><td><input type="text" name="s_tel"></td></tr></table>'
+       . ($mem || !empty($c['_member_save'])
+          ? '<label style="display:block;margin-top:8px"><input type="checkbox" name="_addr_save" value="1" checked> このお届け先をマイページに保存して、次回から選べるようにする</label>' : '')
+       . '</div>';
     echo '<h2>お支払い方法</h2><div class="panel">';
     $first = $pay['methods'][0];
     if ($pay['restricted'] && count($pay['methods']) < 2) {

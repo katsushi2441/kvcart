@@ -69,6 +69,7 @@ switch ($act) {
     case 'makers':     kv_admin_makers(); break;
     case 'categories': kv_admin_categories(); break;
     case 'customers':  kv_admin_customers(); break;
+    case 'members':    kv_admin_members(); break;   // 会員（kv_member.php）
     case 'stats':      kv_admin_stats(); break;
     default:       kv_admin_orders(); break;
 }
@@ -124,7 +125,7 @@ function kv_admin_nav(string $now): void
 {
     // おちゃのこネットの管理画面と同じく、仕事ごとにまとめる（受注管理・商品管理・設定）
     $groups = [
-        '受注管理' => ['orders' => '受注一覧と明細', 'new' => '代理入力', 'inquiries' => 'お問い合わせ受付一覧', 'customers' => '顧客', 'stats' => '売上'],
+        '受注管理' => ['orders' => '受注一覧と明細', 'new' => '代理入力', 'inquiries' => 'お問い合わせ受付一覧', 'customers' => '顧客', 'members' => '会員', 'stats' => '売上'],
         '商品管理' => ['products' => '商品', 'price' => '価格の一括改定', 'pimport' => '商品CSV取り込み', 'makers' => 'メーカー',
                        'categories' => 'カテゴリ', 'plog' => '商品の変更履歴'],
         '在庫管理' => ['stock' => '在庫一括設定', 'stocklog' => '在庫数変更履歴', 'restock' => '再入荷お知らせ登録一覧', 'stockset' => '在庫表示・通知設定'],
