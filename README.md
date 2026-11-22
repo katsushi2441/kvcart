@@ -90,6 +90,22 @@ heteml で実測（2026-09-14）:
 - 商品フィード `/google-shopping.xml`（Google Merchant Center の商品データ仕様・RSS 2.0）。表示中・価格あり・画像ありの商品を、税込価格・在庫状況（in_stock / backorder / out_of_stock）・ブランド・JAN・型番・送料0円で出す。作り置きして、商品が更新されたら作り直す
 - 商品ページの構造化データ（Product / Offer）に在庫状況・送料・返品の決まり（MerchantReturnPolicy）を入れる
 
+## 会員（パスワードなし・2026-11-22）
+
+- **パスワードを使わない。** メールアドレスを入れると、ログイン用のリンク（60分・1回だけ）が届く。リンクを開いた画面で「ログインする」を押して初めて使う（メールの検査がリンクを先に開いても使い切らない）。
+- レジの最初にログインの欄。ログインするとお客様情報が入り、保存した届け先を選べる。ゲストは「会員登録する」を選べる。
+- マイページ（/member）: これまでに買った商品の買い足し・注文の履歴（「同じ商品をカートに」）・届け先・登録の情報・会員の削除。
+- 管理画面「会員」で一覧と検索。おちゃのこネット時代の URL /member-login もログイン画面を出す。
+- 本体は public/kv_member.php。試験は tests/member_e2e.py（本番 DB の写しに対して流す・メールは送らず書き出す）と tests/member_shots.py（320/360/390/1280 のはみ出し）。
+
+### おちゃのこネットの会員の移行
+
+1. おちゃのこの管理画面【受注管理】→【登録者一覧】→「CSVファイルのアップロード / ダウンロード」の「開く」→ 購入回数などにチェック、住所を分割 →「登録者情報をすべてダウンロードする」。
+   **押しても画面は変わらない。** ブラウザのダウンロードフォルダに customer.csv（Shift_JIS）が黙って保存される。
+2. `/usr/bin/python3 scripts/build_member_import.py customer.csv` → outputs/member_import/members.json（会員・届け先・おちゃのこ時代の注文。受注は API から）。
+3. JSON と scripts/import_members.php を heteml の公開フォルダの外に置き、`php8.3 import_members.php ~/web/exbridge_jp/exdirect members.json`。終わったら JSON を消す。
+   何度流してもよい（会員はメールで照合・この店で更新した会員は上書きしない・注文は一度だけ）。
+
 ## 構成
 
 ```
