@@ -45,6 +45,9 @@ try:
     cmd("Emulation.setDeviceMetricsOverride", {"width": width, "height": 1000, "deviceScaleFactor": 2, "mobile": width < 800})
     cmd("Page.navigate", {"url": url})
     time.sleep(5)
+    if os.environ.get("SHOT_HIDE_FIXED"):
+        # 画面に固定表示のボタン（「Kurage.AIに相談」など）が本文に重なって写るので隠す（考察ショートの素材用・11/22）
+        cmd("Runtime.evaluate", {"expression": "document.querySelectorAll('body *').forEach(e=>{const p=getComputedStyle(e).position; if(p==='fixed'||p==='sticky') e.style.setProperty('display','none','important')})"})
     r = cmd("Runtime.evaluate", {"expression": f"(()=>{{const e=document.querySelectorAll({json.dumps(sel)})[{nth}]; if(!e) return null; e.scrollIntoView({{block:'center'}}); const b=e.getBoundingClientRect(); return [b.left+scrollX,b.top+scrollY,b.width,b.height];}})()", "returnByValue": True})
     box = r["result"].get("value")
     if not box:
