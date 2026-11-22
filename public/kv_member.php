@@ -197,6 +197,12 @@ function kv_member_after_order(int $oid, array $post): void
         }
         if (!$m) { return; }
         kv_db()->prepare('UPDATE orders SET member_id=? WHERE id=?')->execute([(int)$m['id'], $oid]);
+        // 会員様の銀行振込2%引き（確認画面で出した額をそのまま付ける。受付メールより前なのでメールの金額にも入る）
+        $md = (int)($post['_member_disc'] ?? 0);
+        if ($md > 0 && ($post['payment'] ?? '') === 'bank') {
+            kv_order_set_discount($oid, $md);
+            kv_log($oid, 'discount', '会員様限定 銀行振込2%引き: ' . number_format($md) . '円（税別）');
+        }
         if (!$mine) { return; }
         if ($save) { kv_member_update_profile((int)$m['id'], $post); }
         if (($post['ship_to'] ?? 'same') === 'other' && !empty($post['_addr_id'])) {
@@ -618,4 +624,97 @@ function kv_admin_members(): void
     echo '</table></div>';
     kv_pager(['page' => $page, 'pages' => (int)ceil($total / $per), 'total' => $total], '?a=members&q=' . rawurlencode($q));
     kv_admin_end();
+}
+
+/* ------------------------------------------------------------------
+ * 会員様限定キャンペーン: 銀行振込で2%引き（2026-11-22 ユーザー指示・12/31まで・X-Direct だけ）
+ *   - 会員（ログイン中、またはその注文で会員登録）＋銀行振込の注文は、問い合わせなしで自動で値引きする。
+ *   - 値引きは税別の商品代金の2%（切り捨て）。標準税率の商品だけ・「銀行振込のみの特別価格」の商品
+ *     （product_price_badge.json に載っている商品）は対象外。
+ *   - 「税別10万円以上・銀行振込は値引きした見積書を提案」（問い合わせ型・kv_campaign_bar）とは併用しない。
+ *     見積もりの値引きにするときは、受注画面の「値引き」をその額に置き換える。
+ *   - 終わったら何もしなくてよい（期限を過ぎると帯も値引きも出なくなる）。
+ * ------------------------------------------------------------------ */
+const KV_MEMBER_CAMPAIGN_END = '2026-12-31 23:59:59';   // 日本時間
+const KV_MEMBER_CAMPAIGN_RATE = 0.02;
+
+function kv_member_campaign_active(): bool
+{
+    if (!function_exists('kv_is_xdirect') || !kv_is_xdirect()) { return false; }
+    return date('Y-m-d H:i:s') <= KV_MEMBER_CAMPAIGN_END;
+}
+
+function kv_member_campaign_end_label(): string
+{
+    return (int)substr(KV_MEMBER_CAMPAIGN_END, 5, 2) . '月' . (int)substr(KV_MEMBER_CAMPAIGN_END, 8, 2) . '日';
+}
+
+/** その商品が会員の2%引きの対象か。 */
+function kv_member_campaign_eligible(array $p): bool
+{
+    if ((int)($p['tax_reduce'] ?? 0) === 1) { return false; }
+    if (function_exists('kv_product_price_badge') && kv_product_price_badge($p) !== '') { return false; }
+    if (kv_price_incl($p) === null || kv_inquiry_only($p)) { return false; }
+    if (function_exists('kv_payment_rule') && kv_payment_rule($p) === 'stripe') { return false; }   // カードのみの商品
+    return true;
+}
+
+/** カートのうち値引きの対象になる金額（税別）。 */
+function kv_member_campaign_base(array $r): int
+{
+    $b = 0;
+    foreach ($r['lines'] as $l) { if (kv_member_campaign_eligible($l['product'])) { $b += (int)$l['amount']; } }
+    return $b;
+}
+
+/** このカート・この入力で付く値引き（税別・円）。会員でない・カード払い・期間外なら 0。 */
+function kv_member_campaign_discount(array $r, array $c): int
+{
+    if (!kv_member_campaign_active()) { return 0; }
+    if (($c['payment'] ?? '') !== 'bank') { return 0; }
+    if (empty($c['_member_id']) && empty($c['_member_save'])) { return 0; }
+    return (int)floor(kv_member_campaign_base($r) * KV_MEMBER_CAMPAIGN_RATE);
+}
+
+/** 値引き後の消費税・合計（kv_order_set_discount と同じ計算: 値引きは10%の商品から引く）。 */
+function kv_member_campaign_totals(array $r, int $disc): array
+{
+    $tax = (int)$r['tax'] - (int)round($disc * 0.1);
+    return ['discount' => $disc, 'tax' => $tax, 'total' => (int)$r['subtotal'] - $disc + $tax];
+}
+
+/** 商品ページの「会員様・銀行振込なら」の1個あたりの税込価格。対象外なら null。 */
+function kv_member_campaign_unit_incl(array $p): ?int
+{
+    if (!kv_member_campaign_active() || !kv_member_campaign_eligible($p)) { return null; }
+    $d = (int)floor((int)$p['price'] * KV_MEMBER_CAMPAIGN_RATE);
+    if ($d <= 0) { return null; }
+    $net = (int)$p['price'] - $d;
+    return $net + (int)floor($net * 0.10);
+}
+
+/** 全ページの帯（kv_campaign_bar の上に出す）。 */
+function kv_member_campaign_bar(): string
+{
+    if (!kv_member_campaign_active()) { return ''; }
+    $in = kv_member_current();
+    return '<style>.campbar.mem{background:#0a7d74}@media (max-width:640px){.campbar.mem small{display:none}.campbar.mem .inner{flex-direction:row;flex-wrap:wrap;align-items:center}.campbar.mem .campbtn{align-self:auto;flex:1 1 100%}}</style>'
+         . '<div class="campbar mem"><div class="inner">'
+         . '<b style="color:#0a7d74">会員様限定</b>'
+         . '<span>' . kv_e(kv_member_campaign_end_label()) . 'まで、会員様は<b>銀行振込で2%引き</b>。ご注文の画面で<b>自動で値引き</b>します（お問い合わせは不要です）。'
+         . '<small>会員登録はご注文のときにできます。パスワードは必要ありません。一部対象外の商品があります。</small></span>'
+         . '<a class="campbtn" href="' . kv_url($in ? 'member' : 'member/login') . '">' . ($in ? 'マイページ' : 'ログイン・会員登録') . '</a></div></div>';
+}
+
+/** カート・お届け先の画面の案内。$r はカート、$c は入力（無ければ空）。 */
+function kv_member_campaign_note(array $r, array $c = []): string
+{
+    if (!kv_member_campaign_active()) { return ''; }
+    $d = (int)floor(kv_member_campaign_base($r) * KV_MEMBER_CAMPAIGN_RATE);
+    if ($d <= 0) { return ''; }
+    $t = kv_member_campaign_totals($r, $d);
+    $who = kv_member_current() ? '会員様は' : '会員様（ご注文のときに会員登録した方も）は';
+    return '<div class="note" style="border-color:#0a7d74"><b>会員様限定・' . kv_e(kv_member_campaign_end_label()) . 'まで</b>　' . $who
+         . '<b>銀行振込で2%引き</b>。このカートなら <b>' . number_format($d) . '円引き</b>で、合計 <b>' . number_format($t['total']) . '円</b>（税込）になります。'
+         . '<span class="src">値引きはご注文の確認画面で自動で付きます。' . (kv_member_current() ? '' : 'ログインは、レジの最初の画面でメールアドレスを入れるだけです。') . '</span></div>';
 }

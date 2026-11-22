@@ -191,6 +191,7 @@ function kv_page_cart(): void
        . '<tr><th>税込合計</th><td><b style="font-size:18px">' . number_format($r['total']) . '円</b></td></tr></table>'
        . '<p class="src">' . kv_e(kv_shop('ship_note')) . '</p>'
        . kv_heavy_note()
+       . kv_member_campaign_note($r)
        . '<p style="text-align:right"><a class="btn" href="' . kv_url('cart/customer') . '">レジに進む</a></p>'
        . '</div></div>';
     kv_footer();
@@ -381,7 +382,12 @@ function kv_page_delivery(): void
            . kv_e(implode('、', array_slice($pay['restricted'], 0, 5))) . (count($pay['restricted']) > 5 ? ' ほか' : '') . '</div>';
     }
     if (in_array('bank', $pay['methods'], true)) {
-        echo '<label><input type="radio" name="payment" value="bank"' . ($first === 'bank' ? ' checked' : '') . '> <b>銀行振込</b>（前払い）</label>'
+        $mdisc = kv_member_campaign_discount($r, ['payment' => 'bank'] + $c);
+        echo '<label><input type="radio" name="payment" value="bank"' . ($first === 'bank' ? ' checked' : '') . '> <b>銀行振込</b>（前払い）'
+           . ($mdisc > 0 ? ' <b style="color:#0a7d74">会員様は2%引き（' . number_format($mdisc) . '円引き）</b>' : '') . '</label>'
+           . ($mdisc <= 0 && kv_member_campaign_active() && kv_member_campaign_base($r) > 0
+              ? '<div class="src" style="margin:2px 0 0 24px;color:#0a7d74">' . kv_e(kv_member_campaign_end_label()) . 'まで、会員様は銀行振込で2%引きです。'
+                . '<a href="' . kv_url('cart/customer') . '">前の画面</a>で「会員登録する」を選ぶか、ログインすると値引きされます。</div>' : '')
            . '<div class="src" style="margin:4px 0 10px 24px">ご入金を確認してから発送します。振込手数料はお客様のご負担でお願いします。</div>';
     }
     if (in_array('stripe', $pay['methods'], true)) {
@@ -438,6 +444,7 @@ function kv_page_confirm(): void
             }
             return;
         }
+        $c['_member_disc'] = kv_member_campaign_discount($r, $c);   // 会員様の銀行振込2%引き（注文を作ったあと kv_member_after_order で付ける）
         $oid = kv_order_create($r, $c);
         kv_cart_set([]);
         unset($_SESSION['checkout']);
@@ -479,9 +486,11 @@ function kv_page_confirm(): void
            . '<td>' . number_format($l['unit']) . '円</td><td>' . $l['qty'] . '</td>'
            . '<td>' . number_format($l['amount']) . '円</td></tr>';
     }
+    $md = kv_member_campaign_totals($r, kv_member_campaign_discount($r, $c));
     echo '<tr><th colspan="3">商品合計（税別）</th><td>' . number_format($r['subtotal']) . '円</td></tr>'
-       . '<tr><th colspan="3">消費税</th><td>' . number_format($r['tax']) . '円</td></tr>'
-       . '<tr><th colspan="3">税込合計</th><td><b>' . number_format($r['total']) . '円</b></td></tr>'
+       . ($md['discount'] > 0 ? '<tr><th colspan="3" style="color:#0a7d74">会員様限定 銀行振込2%引き（税別）</th><td style="color:#0a7d74"><b>-' . number_format($md['discount']) . '円</b></td></tr>' : '')
+       . '<tr><th colspan="3">消費税</th><td>' . number_format($md['tax']) . '円</td></tr>'
+       . '<tr><th colspan="3">税込合計</th><td><b>' . number_format($md['total']) . '円</b></td></tr>'
        . '</table></div>' . kv_heavy_note();
     $ltl = kv_cart_leadtime_lines($r);
     $isCard = ($c['payment'] ?? 'bank') === 'stripe';

@@ -659,6 +659,13 @@ function kv_page_product(int $id): void
         }
         echo '<p class="price-big">' . number_format($incl) . '円<small> 税込（本体 '
            . number_format((int)$p['price']) . '円）</small></p>';
+        // 会員様限定・銀行振込で2%引き（kv_member.php・12/31まで）
+        if (($mu = kv_member_campaign_unit_incl($p)) !== null) {
+            echo '<p style="margin:4px 0 8px;padding:6px 10px;background:#e6f5f3;border:1px solid #9fd6cf;border-radius:8px;color:#064e48">'
+               . '<b>会員様限定・銀行振込なら ' . number_format($mu) . '円</b>（税込・2%引き・' . kv_e(kv_member_campaign_end_label()) . 'まで）<br>'
+               . '<span style="font-size:12.5px">ご注文の画面で自動で値引きします。会員登録はご注文のときにできます（パスワード不要）。'
+               . (kv_member_current() ? '' : ' <a href="' . kv_url('member/login') . '">ログイン</a>') . '</span></p>';
+        }
     }
     if (kv_is_xdirect() && $incl !== null) {
         echo '<p class="src" style="color:#8a5a00">モールの出品手数料・ネットショップサービスの利用料がかからない分、お安くしています。</p>';

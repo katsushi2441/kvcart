@@ -24,6 +24,7 @@ BASE = sys.argv[1].rstrip("/")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "outputs/member_test/shots")
 EMAIL = "kv-member-test@example.invalid"
+PRODUCT = sys.argv[2] if len(sys.argv) > 2 else "/"
 
 
 def login_cookie():
@@ -70,7 +71,7 @@ def main():
         for c in cookies:
             cmd("Network.setCookie", c)
         bad = 0
-        for name, path in [("member", "/member"), ("customer", "/cart/customer"), ("login", "/member/login"), ("top", "/")]:
+        for name, path in [("member", "/member"), ("cart", "/cart"), ("customer", "/cart/customer"), ("login", "/member/login"), ("top", "/"), ("product", PRODUCT)]:
             for w in (320, 360, 390, 1280):
                 cmd("Emulation.setDeviceMetricsOverride", {"width": w, "height": 900, "deviceScaleFactor": 1, "mobile": w < 800})
                 cmd("Page.navigate", {"url": BASE + path})

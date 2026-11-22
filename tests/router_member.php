@@ -4,4 +4,5 @@
  * メールは送らずに mail.log へ書き出す（kv_config.php に KV_SMTP が無いときだけ。ある環境では使わない）。 */
 define('KV_DATA', __DIR__ . '/../outputs/member_test');
 define('KV_DB', KV_DATA . '/shop.sqlite');
+if (getenv('KV_TEST_ORIGIN')) { define('KV_ORIGIN', getenv('KV_TEST_ORIGIN')); }   // X-Direct として動かす（キャンペーンなど店ごとの表示）
 require __DIR__ . '/router.php';
