@@ -138,8 +138,11 @@ function kv_page_top(): void
     echo '<section class="migrated">'
        . '<p class="badge">システム移行のお知らせ</p>'
        . '<h1>exdirect.net は、おちゃのこネットから<br>自社開発のECシステムへ移行しました</h1>'
-       . '<p class="lead">' . kv_e(kv_shop('name')) . '（exdirect.net）は、ネットショップ作成サービス「おちゃのこネット」で運営してきた店を、'
-       . '当社が開発したECシステム <a href="https://kappstore.exbridge.jp/app.php?id=754c7ddb5f1c8f26#ref=exdirect-top">Kurage Vibe-Cart</a> に移しました。</p>'
+       // 移行の理由＝AI駆動経営（2026-11-23 ユーザー指示の説明）
+       . '<p class="lead">株式会社エクスブリッジは、会社の業務をAIが主体となって行う「AI駆動経営」を目指しています。'
+       . 'その一歩として、ネット通販の業務をAIが完全に操作できるシステムへ移すため、ECシステム '
+       . '<a href="https://kappstore.exbridge.jp/app.php?id=754c7ddb5f1c8f26#ref=exdirect-top">Kurage Vibe-Cart</a> を自社で開発し、'
+       . kv_e(kv_shop('name')) . '（exdirect.net）を、ネットショップ作成サービス「おちゃのこネット」から移行しました。</p>'
        . '<ul class="points">'
        . '<li><b>商品ページのURLはそのまま</b>ブックマークや検索結果から、これまでどおり開けます</li>'
        . '<li><b>商品番号もそのまま</b>/product/番号 の番号はおちゃのこネットのときと同じです</li>'
