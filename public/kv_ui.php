@@ -205,6 +205,9 @@ function kv_campaign_bar(): string
          . '<b>キャンペーン実施中</b>'
          . '<span>ご注文の合計金額が<b>税別10万円以上</b>で、お支払い方法が<b>銀行振込</b>のお客様に、'
          . '<b>特別値引きをしたお見積書</b>をご提案します。お気軽にお問い合わせください。'
+         // X のフォローで値引きを上乗せ（2026-11-22 ユーザー指示）
+         . '<br>さらに、X の当社アカウント <a href="https://x.com/xb_bittensor" target="_blank" rel="noopener" style="color:#fff3c4;font-weight:800">@xb_bittensor</a> をフォローし、'
+         . 'お問い合わせのときに<b>フォローしたアカウント名</b>をお知らせいただくと、<b>通常より大きく値引き</b>します。'
          . '<small>（すでに銀行振込のみの特別価格で掲載している商品は、対象外となる場合があります。'
          . '終了日は未定です。予告なく終了する場合があります。'
          . (function_exists('kv_member_campaign_active') && kv_member_campaign_active() ? '会員様の銀行振込2%引きとの併用はできません。' : '') . '）</small></span>'

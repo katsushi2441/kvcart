@@ -976,7 +976,9 @@ function kv_page_contact(): void
        . '<td><input type="text" name="tel" value="' . kv_e($in['tel']) . '">'
        . '<div class="hint">こちらからお電話することはありません。</div></td></tr>'
        . '<tr><th>お問い合わせ内容<span class="req">必須</span></th>'
-       . '<td><textarea name="body" rows="10" required>' . kv_e($in['body']) . '</textarea></td></tr>'
+       . '<td><textarea name="body" rows="10" required>' . kv_e($in['body']) . '</textarea>'
+       . (kv_is_xdirect() ? '<div class="hint">税別10万円以上のお見積りのご相談で、X の当社アカウント @xb_bittensor をフォローされた方は、フォローしたアカウント名もご記入ください。通常より大きく値引きします。</div>' : '')
+       . '</td></tr>'
        . '</table>'
        . '<p class="note">送信をもって、'
        . '<a href="' . kv_url('privacy') . '" target="_blank" rel="noopener">プライバシーポリシー</a>'
