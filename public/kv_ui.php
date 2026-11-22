@@ -208,7 +208,7 @@ function kv_campaign_bar(): string
          // X のフォローで値引きを上乗せ（2026-11-22 ユーザー指示）
          . '<br>さらに、X の当社アカウント <a href="https://x.com/xb_bittensor" target="_blank" rel="noopener" style="color:#fff3c4;font-weight:800">@xb_bittensor</a> をフォローし、'
          . 'お問い合わせのときに<b>フォローしたアカウント名</b>をお知らせいただくと、<b>通常より大きく値引き</b>します。'
-         . '<a href="https://exbridge.jp/vibeblog/2026-11-22-x-direct-x-follow-nebiki-campaign.html#ref=campaign-bar" target="_blank" rel="noopener" style="color:#fff3c4;font-weight:800;margin-left:4px">詳しくはこちら</a>'
+         . '<a href="https://exbridge.jp/vibeblog/2026-11-22-x-direct-x-follow-nebiki-campaign.html#ref=campaign-bar" target="_blank" rel="noopener" style="color:#fff3c4;font-weight:800;margin-left:4px;white-space:nowrap">詳しくはこちら</a>'
          . '<small>（すでに銀行振込のみの特別価格で掲載している商品は、対象外となる場合があります。'
          . '終了日は未定です。予告なく終了する場合があります。'
          . (function_exists('kv_member_campaign_active') && kv_member_campaign_active() ? '会員様の銀行振込2%引きとの併用はできません。' : '') . '）</small></span>'
