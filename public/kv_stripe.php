@@ -403,16 +403,17 @@ function kv_auth_capture_before(array $o): string
 {
     $cb = (string)($o['auth_capture_before'] ?? '');
     if ($cb !== '' || ($o['auth_status'] ?? '') !== 'authorized' || empty($o['auth_pi']) || !kv_stripe_ready()) { return $cb; }
-    static $tried = [];
-    if (isset($tried[$o['id']])) { return ''; }
-    $tried[$o['id']] = true;
+    // 1画面で何度も呼ばれる（残り日数と札）。2回目に '' を返すと「期限切れ」と出たので、読んだ値を覚えて返す（2026-11-24）
+    static $seen = [];
+    if (array_key_exists($o['id'], $seen)) { return $seen[$o['id']]; }
+    $seen[$o['id']] = '';
     try {
         $card = kv_stripe_card_of(kv_stripe_call('GET', '/payment_intents/' . rawurlencode((string)$o['auth_pi']), ['expand' => ['latest_charge']]));
     } catch (RuntimeException $e) { return ''; }
     if ($card['capture_before'] !== '') {
         kv_db()->prepare('UPDATE orders SET auth_capture_before=? WHERE id=?')->execute([$card['capture_before'], (int)$o['id']]);
     }
-    return $card['capture_before'];
+    return $seen[$o['id']] = $card['capture_before'];
 }
 
 /** 仮売上の確定の期限まで残り何日か（今日が期限の日なら 0、過ぎていれば負）。期限が分からなければ null。 */
@@ -435,7 +436,7 @@ function kv_auth_badge(array $o): string
         $d = kv_auth_day($o);
         $left = kv_auth_left($o);
         $cb = kv_auth_capture_before($o);
-        if ($left !== null && strtotime($cb) < time()) {
+        if ($left !== null && $cb !== '' && strtotime($cb) < time()) {
             return '<div><span class="tag" style="background:#fde8e7;color:#b3261e" title="確定の期限 ' . kv_e(substr($cb, 0, 16))
                  . ' を過ぎました">仮売上の期限切れ</span></div>';
         }
