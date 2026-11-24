@@ -20,7 +20,13 @@ declare(strict_types=1);
 const KV_STRIPE_API = 'https://api.stripe.com/v1';
 const KV_STRIPE_VERSION = '2026-10-28.endive';
 
-/** Stripe API を呼ぶ。失敗したら RuntimeException（Stripe のエラー文をそのまま入れる）。 */
+/** Stripe のエラー。$err に Stripe の error（code・decline_code・payment_intent など）をそのまま持つ。 */
+class KvStripeError extends RuntimeException
+{
+    public array $err = [];
+}
+
+/** Stripe API を呼ぶ。失敗したら KvStripeError（RuntimeException。Stripe のエラー文をそのまま入れる）。 */
 function kv_stripe_call(string $method, string $path, array $params = [], string $idem = ''): array
 {
     $secret = kv_cfg()['stripe']['secret'];
@@ -45,7 +51,9 @@ function kv_stripe_call(string $method, string $path, array $params = [], string
     if ($res === false) { throw new RuntimeException('Stripe に接続できません: ' . $err); }
     $j = json_decode((string)$res, true) ?: [];
     if ($code >= 400) {
-        throw new RuntimeException('Stripe のエラー: ' . ($j['error']['message'] ?? ('HTTP ' . $code)));
+        $e = new KvStripeError('Stripe のエラー: ' . ($j['error']['message'] ?? ('HTTP ' . $code)));
+        $e->err = is_array($j['error'] ?? null) ? $j['error'] : [];
+        throw $e;
     }
     return $j;
 }
@@ -133,6 +141,25 @@ function kv_stripe_send_invoice(int $oid): array
     return $inv;
 }
 
+/*
+ * カードを預かる（2026-11-24 ユーザー指示「カードを預かる設定にして」）。
+ * 決済画面（Checkout）で Customer を作り、payment_intent_data.setup_future_usage=off_session でカードを Customer に保存する。
+ * カード番号は Stripe が保管し、店は customer（cus_）と payment_method（pm_）の ID だけを受注に持つ。
+ * これで、仮売上の期限が切れたあとや送料の追加で金額が上がったときに、受注画面から店側で決済し直せる（kv_stripe_reauth）。
+ * ゼウスでカードを預かっていたときと同じ運用。決済画面の「お支払い」ボタンの横に、保管と店側での決済があることを出す。
+ */
+const KV_STRIPE_SAVE_NOTE = 'ご注文の時点では仮売上（お支払い枠の確保）とし、在庫と納期を確かめてから売上を確定します。'
+    . 'カード情報は決済代行会社の Stripe が保管し、当店はカード番号を持ちません。'
+    . '送料の追加などで金額を訂正するときや、手配に時間がかかり仮売上の期限が切れたときは、'
+    . '金額をご連絡したうえで、このカードで当店からお支払いを処理する場合があります。';
+
+/** 決済画面でカードを預かるための指定。受注にお客様（cus_）があればそれに紐づけ、無ければ Customer を作る。 */
+function kv_stripe_save_card_params(string $customer = ''): array
+{
+    return ($customer !== '' ? ['customer' => $customer] : ['customer_creation' => 'always'])
+         + ['custom_text' => ['submit' => ['message' => KV_STRIPE_SAVE_NOTE]]];
+}
+
 /**
  * 注文の確定と同時にカードで払ってもらう（Stripe Checkout）。2026-11-16 ユーザー指示で請求書方式から切り替え。
  * キャンセル・減額は Stripe のダッシュボードで返金（全額・一部）、増額は kv_stripe_send_invoice() で差額を請求する。
@@ -176,19 +203,21 @@ function kv_stripe_checkout(int $oid): array
         'mode' => 'payment',
         'line_items' => $lines,
         'discounts' => $discounts,
-        'customer_email' => $o['email'],
         'client_reference_id' => (string)$oid,
         'metadata' => ['kv_order_id' => (string)$oid, 'kv_order' => $o['code']],
         'payment_intent_data' => ['metadata' => ['kv_order_id' => (string)$oid, 'kv_order' => $o['code']],
                                   'description' => kv_shop('name') . ' ご注文 ' . $o['code'],
                                   // 仮売上（与信）にして、在庫を確かめてから受注画面で確定する（2026-11-19 ユーザー指示）
-                                  'capture_method' => 'manual'],
+                                  'capture_method' => 'manual',
+                                  // カードを預かる（2026-11-24）。あとで店側から off_session で決済し直せるようにする
+                                  'setup_future_usage' => 'off_session'],
         // 本人認証（3D セキュア）を毎回求める（2026-11-17 ユーザー承認）。不正カードの負担をカード会社側に移す
         'payment_method_options' => ['card' => ['request_three_d_secure' => 'any']],
         'success_url' => $base . '/cart/complete',
         'cancel_url' => $base . '/cart/complete?canceled=1',
         'integration_identifier' => 'kvcart-checkout-' . $letters,
-    ], 'kv-cs-' . $o['code'] . '-' . bin2hex(random_bytes(4)));
+    ] + ((string)($o['stripe_customer'] ?? '') !== '' ? [] : ['customer_email' => $o['email']])
+      + kv_stripe_save_card_params((string)($o['stripe_customer'] ?? '')), 'kv-cs-' . $o['code'] . '-' . bin2hex(random_bytes(4)));
     kv_db()->prepare('UPDATE orders SET stripe_id=? WHERE id=?')->execute([$s['id'], $oid]);
     kv_log($oid, 'stripe', 'カード決済の画面を作りました: ' . $s['id'] . ' ' . number_format((int)$o['total']) . '円');
     return $s;
@@ -281,6 +310,7 @@ function kv_stripe_handle(array $ev): string
                    . ' ' . number_format((int)($obj['amount_total'] ?? 0)) . '円');
             // 注文時のカード決済は、ここで初めて受付メールを送る（ご注文とお支払いの確認を1通で）。店にも通知する
             $GLOBALS['kv_risk_note'] = kv_stripe_risk_note($oid, (string)($obj['payment_intent'] ?? ''));
+            kv_stripe_save_card_of_pi($oid, (string)($obj['payment_intent'] ?? ''));
             kv_order_flag($oid, 'paid', true, false);
             kv_mail_send($oid, 'order_paid_card');
             return 'paid';
@@ -308,24 +338,54 @@ function kv_stripe_handle(array $ev): string
 /*
  * カードの仮売上（2026-11-19）。決済画面は capture_method=manual で作るので、お客様が払い終えても
  * PaymentIntent は requires_capture（仮売上）のまま。受注画面の「売上を確定」で capture、「仮売上を取り消す」か
- * 受注のキャンセルで cancel する。カードの仮売上は約7日で切れるので、受注一覧に何日目かを出す。
+ * 受注のキャンセルで cancel する。仮売上の期限は決済ごとに違う（capture_before）ので、受注一覧に何日目かと期限を出す。
  */
 
 /** 決済画面が終わり、仮売上になっていれば PaymentIntent を返す（金額 $expect と一致するときだけ）。 */
 function kv_stripe_authorized(array $session, int $expect): ?array
 {
     if (($session['status'] ?? '') !== 'complete' || empty($session['payment_intent'])) { return null; }
-    $pi = kv_stripe_call('GET', '/payment_intents/' . rawurlencode(is_array($session['payment_intent']) ? $session['payment_intent']['id'] : (string)$session['payment_intent']));
+    $pi = kv_stripe_call('GET', '/payment_intents/' . rawurlencode(is_array($session['payment_intent']) ? $session['payment_intent']['id'] : (string)$session['payment_intent']),
+                         ['expand' => ['latest_charge']]);
     if (($pi['status'] ?? '') !== 'requires_capture' || (int)($pi['amount_capturable'] ?? -1) !== $expect) { return null; }
     return $pi;
 }
 
-/** 受注に仮売上を記録する。 */
+/**
+ * PaymentIntent（latest_charge を expand 済みでも ID のままでもよい）から、預かったカードと仮売上の期限を取り出す。
+ * 返り値: ['customer' => cus_…, 'pm' => pm_…, 'capture_before' => 'Y-m-d H:i:s'（無ければ ''）]
+ * 仮売上の期限はカードの種類・カード会社で違う（Visa の 023786 は30日）ので、決済ごとに
+ * latest_charge.payment_method_details.card.capture_before を見る（2026-11-24）。
+ */
+function kv_stripe_card_of(array $pi): array
+{
+    $ch = $pi['latest_charge'] ?? null;
+    if (is_string($ch) && $ch !== '') {
+        try { $ch = kv_stripe_call('GET', '/charges/' . rawurlencode($ch)); } catch (RuntimeException $e) { $ch = null; }
+    }
+    $cb = is_array($ch) ? (int)($ch['payment_method_details']['card']['capture_before'] ?? 0) : 0;
+    $id = fn($v) => is_array($v) ? (string)($v['id'] ?? '') : (string)$v;
+    return ['customer' => $id($pi['customer'] ?? ''), 'pm' => $id($pi['payment_method'] ?? ''),
+            'capture_before' => $cb > 0 ? date('Y-m-d H:i:s', $cb) : ''];
+}
+
+/** 預かったカード（customer・payment_method）を受注に保存する。空のときは上書きしない。 */
+function kv_stripe_save_card(int $oid, array $card): void
+{
+    if ($card['customer'] === '' || $card['pm'] === '') { return; }
+    kv_db()->prepare('UPDATE orders SET stripe_customer=?, stripe_pm=? WHERE id=?')->execute([$card['customer'], $card['pm'], $oid]);
+    kv_log($oid, 'stripe', 'カードを預かりました（Stripe が保管）: ' . $card['customer'] . ' / ' . $card['pm']);
+}
+
+/** 受注に仮売上を記録する。預かったカードと仮売上の期限（capture_before）も保存する。 */
 function kv_auth_record(int $oid, array $pi): void
 {
-    kv_db()->prepare("UPDATE orders SET auth_status='authorized', auth_pi=?, auth_amount=?, auth_at=? WHERE id=?")
-           ->execute([(string)$pi['id'], (int)$pi['amount_capturable'], date('Y-m-d H:i:s'), $oid]);
-    kv_log($oid, 'stripe', 'カードの仮売上（与信）を確認しました: ' . $pi['id'] . ' ' . number_format((int)$pi['amount_capturable']) . '円');
+    $card = kv_stripe_card_of($pi);
+    kv_db()->prepare("UPDATE orders SET auth_status='authorized', auth_pi=?, auth_amount=?, auth_at=?, auth_done_at=NULL, auth_capture_before=? WHERE id=?")
+           ->execute([(string)$pi['id'], (int)$pi['amount_capturable'], date('Y-m-d H:i:s'), $card['capture_before'], $oid]);
+    kv_log($oid, 'stripe', 'カードの仮売上（与信）を確認しました: ' . $pi['id'] . ' ' . number_format((int)$pi['amount_capturable']) . '円'
+           . ($card['capture_before'] !== '' ? '（確定の期限 ' . substr($card['capture_before'], 0, 16) . '）' : ''));
+    kv_stripe_save_card($oid, $card);
 }
 
 /** 仮売上から何日目か（仮売上の当日を1日目）。仮売上中でなければ 0。 */
@@ -335,16 +395,55 @@ function kv_auth_day(array $o): int
     return (int)floor((strtotime(date('Y-m-d')) - strtotime(substr((string)$o['auth_at'], 0, 10))) / 86400) + 1;
 }
 
-/** 受注一覧・詳細に出す仮売上の札。6日目からは赤（カードの仮売上はおおむね7日で切れる）。 */
+/**
+ * 仮売上の確定の期限（'Y-m-d H:i:s'）。受注に無ければ（2026-11-24 より前の仮売上）Stripe から読んで保存する（GET だけ）。
+ * 読めなければ ''。
+ */
+function kv_auth_capture_before(array $o): string
+{
+    $cb = (string)($o['auth_capture_before'] ?? '');
+    if ($cb !== '' || ($o['auth_status'] ?? '') !== 'authorized' || empty($o['auth_pi']) || !kv_stripe_ready()) { return $cb; }
+    static $tried = [];
+    if (isset($tried[$o['id']])) { return ''; }
+    $tried[$o['id']] = true;
+    try {
+        $card = kv_stripe_card_of(kv_stripe_call('GET', '/payment_intents/' . rawurlencode((string)$o['auth_pi']), ['expand' => ['latest_charge']]));
+    } catch (RuntimeException $e) { return ''; }
+    if ($card['capture_before'] !== '') {
+        kv_db()->prepare('UPDATE orders SET auth_capture_before=? WHERE id=?')->execute([$card['capture_before'], (int)$o['id']]);
+    }
+    return $card['capture_before'];
+}
+
+/** 仮売上の確定の期限まで残り何日か（今日が期限の日なら 0、過ぎていれば負）。期限が分からなければ null。 */
+function kv_auth_left(array $o): ?int
+{
+    $cb = kv_auth_capture_before($o);
+    if ($cb === '') { return null; }
+    return (int)floor((strtotime(substr($cb, 0, 10)) - strtotime(date('Y-m-d'))) / 86400);
+}
+
+/**
+ * 受注一覧・詳細に出す仮売上の札。期限は決済ごとの capture_before（Visa なら30日など）で、残り3日から赤。
+ * 期限が読めないときだけ、一般的な7日を目安にする（6日目から赤）。
+ */
 function kv_auth_badge(array $o): string
 {
     $st = (string)($o['auth_status'] ?? '');
     if ($st === '') { return ''; }
     if ($st === 'authorized') {
         $d = kv_auth_day($o);
-        $red = $d >= 6;
-        return '<div><span class="tag" style="background:' . ($red ? '#fde8e7;color:#b3261e' : '#fff4e0;color:#8a5300') . '" title="仮売上 '
-             . kv_e(substr((string)$o['auth_at'], 0, 16)) . '・おおむね7日で切れます">仮売上 ' . $d . '日目</span></div>';
+        $left = kv_auth_left($o);
+        $cb = kv_auth_capture_before($o);
+        if ($left !== null && strtotime($cb) < time()) {
+            return '<div><span class="tag" style="background:#fde8e7;color:#b3261e" title="確定の期限 ' . kv_e(substr($cb, 0, 16))
+                 . ' を過ぎました">仮売上の期限切れ</span></div>';
+        }
+        $red = $left !== null ? $left <= 3 : $d >= 6;
+        $tip = '仮売上 ' . substr((string)$o['auth_at'], 0, 16) . '・'
+             . ($left !== null ? '確定の期限 ' . substr($cb, 0, 16) : '期限を読めないので7日を目安にしています');
+        return '<div><span class="tag" style="background:' . ($red ? '#fde8e7;color:#b3261e' : '#fff4e0;color:#8a5300') . '" title="' . kv_e($tip) . '">仮売上 ' . $d . '日目'
+             . ($left !== null ? '・期限 ' . kv_e(date('n/j', strtotime($cb))) . '（あと' . $left . '日）' : '') . '</span></div>';
     }
     $lab = ['captured' => ['売上確定', '#e9f7ef;color:#14632f'], 'canceled' => ['仮売上取消', '#eef0f2;color:#52636b'], 'expired' => ['仮売上切れ', '#fde8e7;color:#b3261e']][$st] ?? [$st, '#eef0f2;color:#52636b'];
     return '<div><span class="tag" style="background:' . $lab[1] . '">' . $lab[0] . '</span></div>';
@@ -374,7 +473,7 @@ function kv_stripe_capture(int $oid): void
     if ($amt > (int)$o['auth_amount']) {
         throw new RuntimeException('受注の合計（' . number_format($amt) . '円）が仮売上の額（' . number_format((int)$o['auth_amount']) . '円）を超えています。超える分は確定できません');
     }
-    $pi = kv_stripe_call('POST', '/payment_intents/' . rawurlencode((string)$o['auth_pi']) . '/capture', ['amount_to_capture' => $amt], 'kv-cap-' . $o['code'] . '-' . $amt);
+    $pi = kv_stripe_call('POST', '/payment_intents/' . rawurlencode((string)$o['auth_pi']) . '/capture', ['amount_to_capture' => $amt], 'kv-cap-' . $o['auth_pi'] . '-' . $amt);   // 再決済で仮売上が変わるので PaymentIntent ごとの鍵
     if (($pi['status'] ?? '') !== 'succeeded') { throw new RuntimeException('確定できませんでした（' . ($pi['status'] ?? '?') . '）'); }
     kv_db()->prepare("UPDATE orders SET auth_status='captured', auth_done_at=? WHERE id=?")->execute([date('Y-m-d H:i:s'), $oid]);
     kv_log($oid, 'stripe', '売上を確定しました: ' . $o['auth_pi'] . ' ' . number_format($amt) . '円');
@@ -386,10 +485,112 @@ function kv_stripe_cancel_auth(int $oid, string $why = ''): void
 {
     $o = kv_order($oid);
     if (!$o || ($o['auth_status'] ?? '') !== 'authorized') { throw new RuntimeException('仮売上中ではありません'); }
-    $pi = kv_stripe_call('POST', '/payment_intents/' . rawurlencode((string)$o['auth_pi']) . '/cancel', ['cancellation_reason' => 'requested_by_customer'], 'kv-cxl-' . $o['code']);
+    $pi = kv_stripe_call('POST', '/payment_intents/' . rawurlencode((string)$o['auth_pi']) . '/cancel', ['cancellation_reason' => 'requested_by_customer'], 'kv-cxl-' . $o['auth_pi']);
     if (($pi['status'] ?? '') !== 'canceled') { throw new RuntimeException('取り消せませんでした（' . ($pi['status'] ?? '?') . '）'); }
     kv_db()->prepare("UPDATE orders SET auth_status='canceled', auth_done_at=? WHERE id=?")->execute([date('Y-m-d H:i:s'), $oid]);
     kv_log($oid, 'stripe', '仮売上を取り消しました' . ($why !== '' ? '（' . $why . '）' : '') . ': ' . $o['auth_pi']);
+}
+
+/** 即時売上の決済（仮売上でないもの）でも、預かったカードを受注に保存する。取れなくても決済の処理は止めない。 */
+function kv_stripe_save_card_of_pi(int $oid, string $pi): void
+{
+    if ($pi === '') { return; }
+    try { kv_stripe_save_card($oid, kv_stripe_card_of(kv_stripe_call('GET', '/payment_intents/' . rawurlencode($pi), ['expand' => ['latest_charge']]))); }
+    catch (Throwable $e) { kv_log($oid, 'stripe', '預かったカードを記録できませんでした: ' . $e->getMessage()); }
+}
+
+/** 預かったカードの表示（例: 「visa 4242（12/2030）」）。読めなければ ''。 */
+function kv_stripe_card_label(array $o): string
+{
+    $pm = (string)($o['stripe_pm'] ?? '');
+    if ($pm === '') { return ''; }
+    try { $p = kv_stripe_call('GET', '/payment_methods/' . rawurlencode($pm)); } catch (RuntimeException $e) { return ''; }
+    $c = $p['card'] ?? [];
+    if (!$c) { return (string)($p['type'] ?? ''); }
+    return (string)($c['brand'] ?? '') . ' ' . (string)($c['last4'] ?? '') . '（' . (int)($c['exp_month'] ?? 0) . '/' . (int)($c['exp_year'] ?? 0) . '）';
+}
+
+/**
+ * 預かったカードで、店側から決済し直す（2026-11-24）。仮売上（capture_method=manual）で取り、あとは今までどおり
+ * 受注画面の「売上を確定」で確定する。お客様はその場にいないので off_session で決済する。
+ *   $amount: 決済する金額（円）。確定は受注の合計で行うので、ふつうは送料などを保存したあとの受注の合計。
+ *   $old:    前の仮売上が残っているとき 'after'（新しい仮売上が取れてから取り消す・おすすめ）/ 'before'（先に取り消す。
+ *            カードの利用枠に二重に取る余裕がないとき）
+ * 返り値: ['ok' => bool, 'code' => Stripe のエラーコード（authentication_required など）, 'msg' => 画面に出す文]
+ * 3D セキュアを求められた（authentication_required）ときは、お客様に支払いページ（請求書）を送る流れに切り替える。
+ */
+function kv_stripe_reauth(int $oid, int $amount, string $old = 'after'): array
+{
+    $o = kv_order($oid);
+    if (!$o) { throw new RuntimeException('受注が見つかりません'); }
+    if ((string)($o['stripe_customer'] ?? '') === '' || (string)($o['stripe_pm'] ?? '') === '') {
+        throw new RuntimeException('この受注にはカードを預かっていません（2026-11-24 より前の決済か、カード以外の決済です）');
+    }
+    if (($o['auth_status'] ?? '') === 'captured' || (int)$o['f_paid'] === 1) { throw new RuntimeException('この受注は売上を確定済み（入金済み）です'); }
+    if ($amount <= 0) { throw new RuntimeException('金額を入れてください'); }
+
+    // 前の仮売上がまだ Stripe で生きているか確かめる（期限が過ぎていれば Stripe が取り消している）
+    $prev = '';
+    if (($o['auth_status'] ?? '') === 'authorized' && (string)$o['auth_pi'] !== '') {
+        $pp = kv_stripe_call('GET', '/payment_intents/' . rawurlencode((string)$o['auth_pi']));
+        if (($pp['status'] ?? '') === 'requires_capture') {
+            $prev = (string)$pp['id'];
+        } else {
+            kv_db()->prepare("UPDATE orders SET auth_status='expired', auth_done_at=? WHERE id=?")->execute([date('Y-m-d H:i:s'), $oid]);
+            kv_log($oid, 'stripe', '前の仮売上は Stripe で ' . ($pp['status'] ?? '?') . ' になっていました（期限切れ）: ' . $o['auth_pi']);
+        }
+    }
+    if ($prev !== '' && $old === 'before') { kv_stripe_cancel_auth($oid, '再決済の前に'); }
+
+    try {
+        $pi = kv_stripe_call('POST', '/payment_intents', [
+            'amount' => $amount,
+            'currency' => 'jpy',
+            'customer' => (string)$o['stripe_customer'],
+            'payment_method' => (string)$o['stripe_pm'],
+            'off_session' => 'true',
+            'confirm' => 'true',
+            'capture_method' => 'manual',
+            // お客様がいないのでリダイレクトの要る決済方法は使わない（return_url が要らない）
+            'automatic_payment_methods' => ['enabled' => 'true', 'allow_redirects' => 'never'],
+            'description' => kv_shop('name') . ' ご注文 ' . $o['code'] . '（再決済）',
+            'metadata' => ['kv_order_id' => (string)$oid, 'kv_order' => $o['code'], 'kv_reauth' => '1'],
+            'expand' => ['latest_charge'],
+        ], 'kv-reauth-' . $o['code'] . '-' . $amount . '-' . bin2hex(random_bytes(4)));
+    } catch (KvStripeError $e) {
+        $code = (string)($e->err['code'] ?? '');
+        $dec = (string)($e->err['decline_code'] ?? '');
+        $piId = (string)($e->err['payment_intent']['id'] ?? '');
+        kv_log($oid, 'stripe', '再決済できませんでした（' . number_format($amount) . '円・' . ($code ?: '?') . ($dec !== '' ? '/' . $dec : '') . '）: '
+               . $e->getMessage() . ($piId !== '' ? ' ' . $piId : '')
+               . ($prev !== '' && $old === 'after' ? '。前の仮売上（' . $prev . '）はそのまま残しています' : ''));
+        $msg = $code === 'authentication_required'
+            ? 'カード会社が本人認証（3D セキュア）を求めたため、店側からは決済できませんでした。'
+              . 'お客様に支払いページを送ってください（下の「カード払いの請求書を送る」）。お客様が本人認証をして支払います。'
+            : 'カードで決済できませんでした（' . ($code ?: '不明') . ($dec !== '' ? '・' . $dec : '') . '）。' . $e->getMessage()
+              . '　お客様に支払いページ（請求書）を送るか、別の方法でのお支払いをご相談ください。';
+        return ['ok' => false, 'code' => $code, 'msg' => $msg];
+    }
+    if (($pi['status'] ?? '') !== 'requires_capture') {
+        kv_log($oid, 'stripe', '再決済が仮売上になりませんでした（' . ($pi['status'] ?? '?') . '）: ' . ($pi['id'] ?? ''));
+        if (($pi['status'] ?? '') === 'requires_action') {
+            try { kv_stripe_call('POST', '/payment_intents/' . rawurlencode((string)$pi['id']) . '/cancel'); } catch (RuntimeException $e) {}
+            return ['ok' => false, 'code' => 'authentication_required',
+                    'msg' => 'カード会社が本人認証（3D セキュア）を求めました。お客様に支払いページを送ってください（下の「カード払いの請求書を送る」）。'];
+        }
+        return ['ok' => false, 'code' => (string)($pi['status'] ?? ''), 'msg' => '再決済が仮売上になりませんでした（' . ($pi['status'] ?? '?') . '）。Stripe のダッシュボードで確かめてください。'];
+    }
+    if ($prev !== '' && $old !== 'before') {
+        try { kv_stripe_call('POST', '/payment_intents/' . rawurlencode($prev) . '/cancel', ['cancellation_reason' => 'duplicate'], 'kv-cxl-' . $prev); }
+        catch (RuntimeException $e) { kv_log($oid, 'stripe', '前の仮売上を取り消せませんでした（Stripe で取り消してください）: ' . $prev . ' ' . $e->getMessage()); }
+        kv_log($oid, 'stripe', '新しい仮売上が取れたので、前の仮売上を取り消しました: ' . $prev);
+    }
+    $card = kv_stripe_card_of($pi);
+    kv_db()->prepare("UPDATE orders SET auth_status='authorized', auth_pi=?, auth_amount=?, auth_at=?, auth_done_at=NULL, auth_capture_before=? WHERE id=?")
+           ->execute([(string)$pi['id'], (int)$pi['amount_capturable'], date('Y-m-d H:i:s'), $card['capture_before'], $oid]);
+    kv_log($oid, 'stripe', '預かったカードで再決済し、仮売上にしました: ' . $pi['id'] . ' ' . number_format((int)$pi['amount_capturable']) . '円'
+           . ($card['capture_before'] !== '' ? '（確定の期限 ' . substr($card['capture_before'], 0, 16) . '）' : ''));
+    return ['ok' => true, 'code' => '', 'msg' => number_format((int)$pi['amount_capturable']) . '円で仮売上を取りました。在庫と納期を確かめたら「売上を確定」を押してください。'];
 }
 
 /*
@@ -442,12 +643,14 @@ function kv_stripe_checkout_pending(array $cart, array $post): array
         // 仮売上（与信）にして、在庫を確かめてから受注画面で確定する（2026-11-19 ユーザー指示「注文時は仮売上」）。
         // 欠品で取り消すときに Stripe の手数料がかからない（確定後の返金では手数料が戻らない）
         'payment_intent_data' => ['metadata' => ['kv_pending_id' => (string)$pid], 'description' => kv_shop('name') . ' ご注文',
-                                  'capture_method' => 'manual'],
+                                  'capture_method' => 'manual',
+                                  // カードを預かる（2026-11-24）。あとで店側から off_session で決済し直せるようにする
+                                  'setup_future_usage' => 'off_session'],
         'payment_method_options' => ['card' => ['request_three_d_secure' => 'any']],
         'success_url' => $base . '/cart/complete?pc=' . $token,
         'cancel_url' => $base . '/cart/confirm?canceled=1',
         'integration_identifier' => 'kvcart-checkout-' . $letters,
-    ], 'kv-pc-' . $token);
+    ] + kv_stripe_save_card_params(), 'kv-pc-' . $token);
     $db->prepare('UPDATE pending_checkouts SET session_id=? WHERE id=?')->execute([$s['id'], $pid]);
     return $s;
 }
@@ -497,6 +700,7 @@ function kv_pending_finalize(int $pid, ?array $session = null): int
     if ($auth) {
         kv_auth_record($oid, $auth);   // 入金チェックは「売上を確定」で付く
     } else {
+        kv_stripe_save_card_of_pi($oid, (string)($s['payment_intent'] ?? ''));
         kv_order_flag($oid, 'paid', true, false);
     }
     kv_mail_send($oid, 'order_paid_card');

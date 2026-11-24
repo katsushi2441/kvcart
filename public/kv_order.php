@@ -71,6 +71,11 @@ function kv_order_schema(): void
         foreach (['auth_status' => 'TEXT', 'auth_pi' => 'TEXT', 'auth_amount' => 'INTEGER', 'auth_at' => 'TEXT', 'auth_done_at' => 'TEXT'] as $c => $t) {
             if (!$has('orders', $c)) { kv_db()->exec("ALTER TABLE orders ADD COLUMN $c $t"); }
         }
+        // カードを預かる（2026-11-24 ユーザー指示「カードを預かる設定にして」）。stripe_customer=cus_… / stripe_pm=pm_…（カード番号は Stripe が保管）。
+        // auth_capture_before は仮売上の確定の期限（Stripe の latest_charge.payment_method_details.card.capture_before・決済ごとに違う）
+        foreach (['stripe_customer' => 'TEXT', 'stripe_pm' => 'TEXT', 'auth_capture_before' => 'TEXT'] as $c => $t) {
+            if (!$has('orders', $c)) { kv_db()->exec("ALTER TABLE orders ADD COLUMN $c $t"); }
+        }
         if (!$has('mail_templates', 'label')) { kv_db()->exec('ALTER TABLE mail_templates ADD COLUMN label TEXT'); }
         if (!$has('mail_templates', 'kind'))  { kv_db()->exec('ALTER TABLE mail_templates ADD COLUMN kind TEXT'); }
         // 区分を記録する前に送ったメールは、件名から区分を当てる

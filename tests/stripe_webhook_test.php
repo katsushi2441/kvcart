@@ -16,7 +16,7 @@ check('正しい署名は通る', kv_stripe_verify($p, $sign($p, time()), $sec))
 check('中身を変えた署名は通らない', !kv_stripe_verify(str_replace('1100', '9', $p), $sign($p, time()), $sec));
 check('別のシークレットでは通らない', !kv_stripe_verify($p, $sign($p, time()), 'whsec_other'));
 check('10分前の署名は通らない', !kv_stripe_verify($p, $sign($p, time() - 600), $sec));
-check('取り消した古い請求書のイベントは無視', kv_stripe_handle(json_decode($mk('invoice.paid', 'in_OLD'), true)) === 'ignored: old invoice');
+check('取り消した古い請求書のイベントは無視', kv_stripe_handle(json_decode($mk('invoice.paid', 'in_OLD'), true)) === 'ignored: old object');
 check('未入金のまま', (int)kv_order($oid)['f_paid'] === 0);
 check('invoice.paid で入金になる', kv_stripe_handle(json_decode($p, true)) === 'paid' && (int)kv_order($oid)['f_paid'] === 1);
 check('同じイベントの再送は二重にしない', kv_stripe_handle(json_decode($p, true)) === 'already paid');

@@ -424,6 +424,18 @@ function kv_admin_order(): void
         } elseif (isset($_POST['auth_cancel'])) {
             try { kv_stripe_cancel_auth($id, '受注画面から'); }
             catch (RuntimeException $e) { kv_log($id, 'stripe', '仮売上を取り消せませんでした: ' . $e->getMessage()); }
+        } elseif (isset($_POST['auth_reauth'])) {
+            // 預かったカードで店側から決済し直す（2026-11-24）。結果は order_logs（kind=stripe）にも残る
+            try {
+                $r = kv_stripe_reauth($id, (int)preg_replace('/[^0-9]/', '', (string)($_POST['reauth_amount'] ?? '0')),
+                                      (string)($_POST['reauth_old'] ?? 'after') === 'before' ? 'before' : 'after');
+                $q = $r['ok'] ? 'ok' : ($r['code'] === 'authentication_required' ? 'authreq' : 'ng');
+            } catch (RuntimeException $e) {
+                kv_log($id, 'stripe', '再決済できませんでした: ' . $e->getMessage());
+                $q = 'ng';
+            }
+            header('Location: ?a=order&id=' . $id . '&reauth=' . $q);
+            exit;
         } elseif (isset($_POST['stripe_invoice'])) {
             try { kv_stripe_send_invoice($id); }
             catch (RuntimeException $e) { kv_log($id, 'stripe', '請求書を送れませんでした: ' . $e->getMessage()); }
@@ -482,7 +494,10 @@ function kv_admin_order(): void
             $amt = (int)$o['total'];
             echo '<p class="src">在庫と納期を確かめたら「売上を確定」を押してください。今の受注の合計（' . number_format($amt) . '円）で確定します。'
                . '値引きなどで減らした場合は減らした額で確定し、残りは取り消されます（仮売上の額を超える増額はできません）。'
-               . 'カードの仮売上はおおむね7日で切れるので、それまでに確定してください。手配できない場合は「仮売上を取り消す」（手数料はかかりません）。</p>'
+               . (($cb = kv_auth_capture_before($o)) !== ''
+                  ? 'この仮売上の確定の期限は <b>' . kv_e(substr($cb, 0, 16)) . '</b>（カード会社が決めた期限・Stripe の capture_before）です。それまでに確定してください。'
+                  : '確定の期限を Stripe から読めませんでした。一般的な7日を目安に確定してください。')
+               . '手配できない場合は「仮売上を取り消す」（手数料はかかりません）。</p>'
                . '<button class="btn" type="submit" name="auth_capture" value="1" onclick="return confirm(\'' . number_format($amt) . '円で売上を確定します\')"'
                . ($amt > (int)$o['auth_amount'] ? ' disabled title="仮売上の額を超えています"' : '') . '>売上を確定（' . number_format($amt) . '円）</button> '
                . '<button class="btn gray" type="submit" name="auth_cancel" value="1" onclick="return confirm(\'仮売上を取り消します。お客様への請求は無くなります\')">仮売上を取り消す</button>';
@@ -490,8 +505,47 @@ function kv_admin_order(): void
         echo '</form>';
     }
 
-    // カード払いの請求書（Stripe）。注文後に在庫・送料を確かめてから、確定した金額で送る
-    if ($o['payment'] === 'stripe' && kv_stripe_ready() && ($o['auth_status'] ?? '') === '') {
+    // 預かったカードで再決済（2026-11-24）。仮売上の期限が切れた・送料の追加で金額が上がったときに、店側から off_session で仮売上を取り直す
+    $rq = (string)($_GET['reauth'] ?? '');
+    if ($rq !== '') {
+        $last = '';
+        foreach (kv_order_logs($id) as $l) { if ($l['kind'] === 'stripe') { $last = (string)$l['detail']; break; } }
+        echo $rq === 'ok' ? '<div class="note"><b>再決済しました。</b>' . kv_e($last) . '　在庫と納期を確かめたら「売上を確定」を押してください。</div>'
+           : ($rq === 'authreq'
+              ? '<div class="alert"><b>カード会社が本人認証（3D セキュア）を求めたため、店側からは決済できませんでした。</b><br>'
+                . 'お客様に支払いページを送ってください。下の「カード払いの請求書を送る」で、受注の合計（' . number_format((int)$o['total']) . '円）の支払いページをメールで送れます。'
+                . 'お客様が本人認証をして支払うと、入金が自動で付きます。'
+                . (($o['auth_status'] ?? '') === 'authorized' ? '<br>前の仮売上が残っています。請求書が支払われたら「仮売上を取り消す」を押してください（二重の請求にしないため）。' : '')
+                . '<br><span class="src">' . kv_e($last) . '</span></div>'
+              : '<div class="alert"><b>再決済できませんでした。</b>' . kv_e($last) . '</div>');
+    }
+    $canReauth = $o['payment'] === 'stripe' && kv_stripe_ready() && (string)($o['stripe_pm'] ?? '') !== ''
+              && (int)$o['f_paid'] !== 1 && ($o['auth_status'] ?? '') !== 'captured' && (int)$o['cancelled'] !== 1;
+    if ($canReauth) {
+        $authOn = ($o['auth_status'] ?? '') === 'authorized';
+        echo '<form method="post" class="panel"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
+           . '<b>預かったカードで再決済（Stripe）</b>'
+           . '<p class="src">預かったカード: ' . kv_e(kv_stripe_card_label($o) ?: (string)$o['stripe_pm']) . '　カード番号は Stripe が保管しています。</p>'
+           . '<p class="src">仮売上の期限が切れたときや、送料の追加などで金額が上がったときに、お客様の操作なしで仮売上を取り直します。'
+           . '金額を訂正するときは、先に送料・値引きを保存して受注の合計を直し、お客様に金額をご連絡してから押してください。'
+           . '取れたら、今までどおり在庫と納期を確かめて「売上を確定」で確定します（確定は受注の合計で行います）。</p>'
+           . '<p>金額 <input name="reauth_amount" value="' . (int)$o['total'] . '" inputmode="numeric" style="width:9em;padding:6px;border:1px solid #cfdae4;border-radius:6px"> 円'
+           . '（受注の合計 ' . number_format((int)$o['total']) . '円）</p>'
+           . ($authOn
+              ? '<p class="src">前の仮売上（' . number_format((int)$o['auth_amount']) . '円）が残っています。<br>'
+                . '<label><input type="radio" name="reauth_old" value="after" checked> 新しい仮売上が取れてから、前の仮売上を取り消す（おすすめ。失敗しても前の仮売上は残る）</label><br>'
+                . '<label><input type="radio" name="reauth_old" value="before"> 先に前の仮売上を取り消してから決済する（カードの利用枠が足りないとき）</label></p>'
+              : '')
+           . '<button class="btn" type="submit" name="auth_reauth" value="1" onclick="return confirm(\'預かったカードで、入力した金額の仮売上を取ります\')">再決済する（仮売上）</button>'
+           . '<p class="src">本人認証（3D セキュア）を求められて失敗したときは、下の「カード払いの請求書を送る」でお客様に支払いページを送ってください。</p>'
+           . '</form>';
+    }
+
+    // カード払いの請求書（Stripe）。注文後に在庫・送料を確かめてから、確定した金額で送る。
+    // 仮売上が取消・期限切れのときと、再決済で本人認証を求められたときも出す（お客様に支払いページを送る流れ・2026-11-24）
+    if ($o['payment'] === 'stripe' && kv_stripe_ready()
+        && (in_array((string)($o['auth_status'] ?? ''), ['', 'canceled', 'expired'], true) || $rq === 'authreq' || strpos((string)$o['stripe_id'], 'in_') === 0)
+        && ($o['auth_status'] ?? '') !== 'captured') {
         $inv = kv_stripe_invoice_of($o);
         echo '<form method="post" class="panel"><input type="hidden" name="csrf" value="' . kv_e(kv_csrf()) . '">'
            . '<b>カード払いの請求書（Stripe）</b>';
