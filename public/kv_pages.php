@@ -1192,7 +1192,7 @@ function kv_supplier_faq(): array
     $soc = kv_supplier_social();
     return [
         ['X-Directに商品を掲載するのに費用はかかりますか？', '初期費用・出品料・月額はかかりません。当社が仕入れて販売する形なので、モールのような販売手数料もいただきません。'],
-        ['どんな商品を募集していますか？', '工具・機械・設備・計測機器・厨房機器・バッテリーなど、工場・建設・農業・飲食店などの法人のお客様が使う商品です。メーカー直送（または問屋さまからの直送）に対応できる商品を募集しています。'],
+        ['どんな商品を募集していますか？', '工具・機械・設備・計測機器・清掃用品・清掃機械・厨房機器（調理機械）・バッテリーなど、工場・建設・農業・ビルメンテナンス（清掃）・飲食店などの法人のお客様が使う商品です。メーカー直送（または問屋さまからの直送）に対応できる商品を募集しています。'],
         ['掲載までにどのくらいかかりますか？', '価格表と商品情報（カタログやホームページで可）をいただいてから、数日で掲載します。商品ページは当社がAIで作ります。'],
         ['価格表や商品データが整っていなくても相談できますか？', 'できます。商品・価格・在庫を管理する業務システムを、AIを使って低コストで開発し、AI-IT顧問で運用まで一緒に進めることもできます。'],
         ['運営会社はどんな会社ですか？', '名古屋の株式会社エクスブリッジです。2004年に創業し、業務システムの開発とネット通販を続けています。'
@@ -1235,13 +1235,16 @@ function kv_page_supplier(): void
     }
 
     $s = kv_stats();
-    $makers = array_slice(array_map(fn($m) => $m['name'], kv_makers()), 0, 20);
-    $desc = '販路拡大をお考えの工具・機械・設備のメーカー・問屋さまへ。出品の初期費用はかかりません。モールやSaaSのECのような手間・手数料なしで、X-Direct（取扱 ' . number_format($s['products'])
+    // 清掃（精和産業・蔵王産業）と厨房（ホーヨー・中部コーポレーション・千葉工業所・愛豊）のメーカーも必ず並ぶように（2026-11-24 ユーザー指示）
+    $mkAll = array_map(fn($m) => $m['name'], kv_makers());
+    $mkFirst = array_values(array_intersect(['精和産業', '蔵王産業', 'ホーヨー', '中部コーポレーション', '千葉工業所', '愛豊'], $mkAll));
+    $makers = array_slice(array_values(array_unique(array_merge($mkFirst, $mkAll))), 0, 20);
+    $desc = '販路拡大をお考えの工具・機械・設備・清掃用品・厨房機器のメーカー・問屋さまへ。出品の初期費用はかかりません。モールやSaaSのECのような手間・手数料なしで、X-Direct（取扱 ' . number_format($s['products'])
           . '点）からメーカー直送で全国の法人へ販売しませんか。商品データの用意が手間なら、AIで商品管理の業務システムも低コストで開発します。';
     $soc = kv_supplier_social();
     $o = kv_origin();
     // 冒頭の要約（AI の回答に引用されやすい事実の文。2026-11-17 SEO/AEO/GEO）
-    $lead = 'X-Direct（株式会社エクスブリッジ・2004年創業・名古屋）は、工具・機械・設備のメーカー・問屋さまの商材を募集しています。'
+    $lead = 'X-Direct（株式会社エクスブリッジ・2004年創業・名古屋）は、工具・機械・設備・清掃用品・清掃機械・厨房機器（調理機械）のメーカー・問屋さまの商材を募集しています。'
           . '掲載の初期費用・出品料・月額はかからず、商品ページは当社がAIで作ります。注文が入るたびに当社が発注し、お客様へは直送していただく形で、全国の法人のお客様に販売します。';
     $faq = kv_supplier_faq();
     $org = ['@type' => 'Organization', '@id' => 'https://exbridge.jp/#organization', 'name' => kv_shop('company'), 'url' => 'https://exbridge.jp/',
@@ -1286,7 +1289,7 @@ function kv_page_supplier(): void
         return;
     }
 
-    echo '<section class="sup-hero"><h1>工具・機械・設備の商材を募集しています</h1>'
+    echo '<section class="sup-hero"><h1>工具・機械・設備・清掃用品・厨房機器の商材を募集しています</h1>'
        . '<p>メーカー・問屋さまへ。御社の商品を、メーカー直送で全国の法人のお客様に販売します。<br>'
        . '<b>出品の初期費用はかかりません。</b>モールやネットショップサービスのような手数料・月額もいただきません。</p>'
        . '<a class="btn" href="#supplier-form">取り扱いの相談をする</a></section>';
@@ -1297,8 +1300,8 @@ function kv_page_supplier(): void
        . '<div><b>2004年</b><span>運営会社の創業</span></div></div>';
 
     echo '<div class="panel"><h2>X-Direct について</h2>'
-       . '<p>X-Direct は、株式会社エクスブリッジ（名古屋）が運営する、工具・機械・計測機器・厨房機器・バッテリーなどの通信販売です。'
-       . '工場・建設・農業・飲食店など、法人のお客様からのご注文が中心です。</p>'
+       . '<p>X-Direct は、株式会社エクスブリッジ（名古屋）が運営する、工具・機械・計測機器・清掃用品・清掃機械・厨房機器（調理機械）・バッテリーなどの通信販売です。'
+       . '工場・建設・農業・ビルメンテナンス（清掃）・飲食店など、法人のお客様からのご注文が中心です。</p>'
        . '<p class="sup-makers">主な取り扱いメーカー：' . kv_e(implode('、', $makers)) . '</p></div>';
     echo kv_pv_video('モールの手数料も、ネットショップの月額もかからない X-Direct の仕組みを、58秒の動画で紹介しています（音声が出ます）。');
 
@@ -1386,7 +1389,7 @@ function kv_page_supplier(): void
        . '<tr><th>ご担当者名<span class="req">必須</span></th><td><input type="text" name="name" value="' . kv_e($f['name']) . '" required></td></tr>'
        . '<tr><th>メールアドレス<span class="req">必須</span></th><td><input type="email" name="email" value="' . kv_e($f['email']) . '" required></td></tr>'
        . '<tr><th>電話番号</th><td><input type="tel" name="tel" value="' . kv_e($f['tel']) . '"></td></tr>'
-       . '<tr><th>取り扱い商品のジャンル<span class="req">必須</span></th><td><input type="text" name="genre" value="' . kv_e($f['genre']) . '" required><div class="hint">例：電動工具、ポンプ、LED照明、厨房機器</div></td></tr>'
+       . '<tr><th>取り扱い商品のジャンル<span class="req">必須</span></th><td><input type="text" name="genre" value="' . kv_e($f['genre']) . '" required><div class="hint">例：電動工具、ポンプ、清掃機械、厨房機器</div></td></tr>'
        . '<tr><th>ホームページのURL</th><td><input type="text" name="url" value="' . kv_e($f['url']) . '"></td></tr>'
        . '<tr><th>価格表</th><td><select name="pricelist"><option value="">選んでください</option>' . $opt('あり（PDF）') . $opt('あり（Excel）') . $opt('あり（その他）') . $opt('なし') . '</select></td></tr>'
        . '<tr><th>ご相談の内容</th><td><select name="topic"><option value="">選んでください</option>' . $opt2('X-Direct での取り扱い') . $opt2('商品管理の業務システムの開発') . $opt2('両方') . '</select></td></tr>'
