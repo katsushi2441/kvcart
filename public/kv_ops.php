@@ -199,7 +199,9 @@ function kv_doc_pdf(int $oid, string $type, array $opt = []): string
         $c = $T(255, 790, 22, $title);
         $c .= $R(555, 800, 9, '発行日 ' . $date) . $R(555, 787, 9, '受注番号 ' . $o['code']) . ($pages > 1 ? $R(555, 774, 8, $page . ' / ' . $pages) : '');
         if ($page > 1) { return $c . $T(40, 760, 11, $atena) . $L(40, 750, 555, 750, 0.5); }
-        $c .= $T(40, 735, 14, $atena) . $L(40, 729, 300, 729, 0.8);
+        // 宛名が長いとき（長い法人名など）は、右の発行者の欄に重ならないよう文字を小さくする（2026-11-25）
+        $asz = 14; while ($asz > 8 && kv_pdf_width($asz, $atena) > 290) { $asz -= 0.5; }
+        $c .= $T(40, 735, $asz, $atena) . $L(40, 729, 300, 729, 0.8);
         // 発行者
         $y = 735;
         foreach ([[11, kv_shop('company')], [8.5, kv_shop('name') . '（' . preg_replace('#^https?://#', '', rtrim(defined('KV_ORIGIN') ? KV_ORIGIN : kv_site_url(''), '/')) . '）'], [8.5, (kv_shop('zip') !== '' ? '〒' . kv_shop('zip') . ' ' : '') . kv_shop('address')],
