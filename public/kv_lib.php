@@ -103,10 +103,42 @@ function kv_jan(array $p): string
  * 商品ページの <title>。商品名から【送料無料】【破格値】のような飾りを外し、
  * JAN があって商品名に入っていなければ末尾に「JAN 4937…」を足す（JAN で検索する人向け・2026-11-17）。
  */
-function kv_product_title(array $p): string
+function kv_product_title(array $p, ?string $maker_name = null): string
 {
-    $t = trim(preg_replace('/\s+/u', ' ', preg_replace('/【[^】]*】/u', ' ', (string)$p['name'])));
+    $t = trim(preg_replace('/[\s　]+/u', ' ', preg_replace('/【[^】]*】/u', ' ', (string)$p['name'])));
     if ($t === '') { $t = (string)$p['name']; }
+
+    // 買う人は「型番」か「メーカー名＋品名」で探す（exdirect.net の検索クリックの86%が商品ページに直接・2026-11-27 実測）。
+    // 型番を先頭に1回だけ置き、同じ型番・同じ語の繰り返しを外し、メーカー名が無ければ足す。
+    $norm = static fn(string $s): string => preg_replace('/[^0-9a-z\p{Han}\p{Hiragana}\p{Katakana}ー]/u', '',
+        mb_strtolower(mb_convert_kana($s, 'asKV', 'UTF-8')));
+    $mdl = kv_model_display($p['model_number'] ?? '', $t);
+    $words = explode(' ', $t);
+    // 先頭に出すのは英字を含む型番だけ（数字だけの社内番号は先頭に出さない）。出すときは商品名の中の書き方のまま。
+    // 商品名の先頭がすでに型番の形（英字と数字を含む）なら動かさない（型番の欄に仕入先の記号が入っている商品がある）。
+    $movable = $mdl !== '' && preg_match('/[A-Za-z]/', $mdl)
+        && !preg_match('/(?=.*[A-Za-zＡ-Ｚａ-ｚ])(?=.*[0-9０-９])/u', $words[0] ?? '');
+    $out = []; $seen = []; $orig = '';
+    foreach ($words as $w) {
+        $k = $norm($w);
+        if ($movable && $k !== '' && $k === $norm($mdl)) {
+            if ($orig === '' || !preg_match('/[０-９Ａ-Ｚａ-ｚ]/u', $w) && preg_match('/[０-９Ａ-Ｚａ-ｚ]/u', $orig)) { $orig = $w; }
+            continue;
+        }
+        if ($k !== '' && mb_strlen($k) >= 2 && isset($seen[$k])) { continue; }
+        if ($k !== '') { $seen[$k] = true; }
+        $out[] = $w;
+    }
+    if ($orig !== '') { array_unshift($out, $orig); $t = implode(' ', $out); }
+    elseif ($out) { $t = implode(' ', $out); }
+    if ($maker_name === null && !empty($p['maker_id'])) {
+        $m = kv_maker((int)$p['maker_id']);
+        $maker_name = $m ? (string)$m['name'] : '';
+    }
+    // 商品名にメーカー名（頭の3文字＝「ヤマダ」「蔵王産」など）が入っていなければ足す
+    $mn = $maker_name !== null ? $norm($maker_name) : '';
+    if ($mn !== '' && strpos($norm($t), mb_substr($mn, 0, 3)) === false) { $t .= ' ' . $maker_name; }
+
     $jan = kv_jan($p);
     if ($jan !== '' && strpos($t, $jan) === false) { $t .= ' JAN ' . $jan; }
     return $t;

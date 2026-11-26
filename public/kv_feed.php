@@ -70,8 +70,9 @@ function kv_gshop_build(string $path): array
         $ov = $ovr[(string)$p['id']] ?? [];
         if (!empty($ov['image']) && is_file(__DIR__ . '/' . $ov['image'])) { $img = $base . '/' . $ov['image']; }
         if ($img !== kv_abs((string)$p['image_url'])) { $skip['拡大画像を使用']++; }
-        $title = kv_gshop_text((string)$p['name'], 150);
         $mk = $makers[(int)$p['maker_id']] ?? '';
+        // 商品ページの題名と同じ形（型番を先頭に1回・繰り返しを外す・メーカー名を足す）。JAN は g:gtin で渡すので題名からは外す（2026-11-27）
+        $title = kv_gshop_text(preg_replace('/ JAN \d{8,13}$/', '', kv_product_title($p, $mk)), 150);
         $mdl = kv_model_display($p['model_number'], $p['name']);
         $desc = kv_gshop_text((string)$p['description'], 4000);
         if (mb_strlen($desc) < 30) {
