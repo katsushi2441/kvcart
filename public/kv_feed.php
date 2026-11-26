@@ -117,8 +117,12 @@ function kv_page_gshop_feed(): void
     $age = is_file($path) ? time() - filemtime($path) : PHP_INT_MAX;
     // 取り扱い終了（商品の削除）は updated_at を動かさないので、商品の変更記録の更新でも作り直す（2026-11-21）
     $plog = KV_DATA . '/product_log.jsonl';
-    if ($age > 6 * 3600 || ($last !== '' && strtotime($last) > filemtime($path))
-        || (is_file($plog) && filemtime($plog) > filemtime($path))) {
+    // 広告から外す指定（メーカー・商品）を変えたときも作り直す（2026-11-26 指定を足してもフィードが6時間変わらなかった）
+    $newer = false;
+    foreach ([$plog, KV_DATA . '/gshop_noad_makers.json', KV_DATA . '/gshop_noad_products.json'] as $f) {
+        if (is_file($f) && is_file($path) && filemtime($f) > filemtime($path)) { $newer = true; }
+    }
+    if ($age > 6 * 3600 || ($last !== '' && strtotime($last) > filemtime($path)) || $newer) {
         @set_time_limit(120);
         kv_gshop_build($path);
     }
