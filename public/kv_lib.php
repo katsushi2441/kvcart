@@ -264,24 +264,41 @@ function kv_products(array $f = [], int $page = 1, int $per = 24): array
     $a = [];
     if (!empty($f['maker_id']))    { $w[] = 'maker_id=?';    $a[] = (int)$f['maker_id']; }
     if (!empty($f['category_id'])) { $w[] = 'category_id=?'; $a[] = (int)$f['category_id']; }
+    $base_w = $w; $base_a = $a;
+    $terms = [];
     if (!empty($f['q'])) {
-        // 空白で区切った語は全部を含むものを探す。全角・半角、英字の大小は区別しない
-        $terms = preg_split('/\s+/u', trim(kv_norm((string)$f['q']))) ?: [];
-        $useFn = method_exists(kv_db(), 'sqliteCreateFunction');
-        foreach (array_slice(array_filter($terms, 'strlen'), 0, 5) as $t) {
-            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $t) . '%';
-            // JAN（gtin）でも引けるようにする（2026-11-17・JANコードで探す人がいる）
-            $w[] = $useFn ? "(kvnorm(name) LIKE ? ESCAPE '\\' OR kvnorm(model_number) LIKE ? ESCAPE '\\' OR gtin LIKE ? ESCAPE '\\')"
-                          : "(name LIKE ? ESCAPE '\\' OR model_number LIKE ? ESCAPE '\\' OR gtin LIKE ? ESCAPE '\\')";
-            $a[] = $like;
-            $a[] = $like;
-            $a[] = $like;
-        }
+        $terms = kv_search_terms((string)$f['q']);
+        [$w, $a] = kv_search_where($terms, $base_w, $base_a);
     }
     $sql = 'FROM products WHERE ' . implode(' AND ', $w);
     $st = kv_db()->prepare('SELECT COUNT(*) ' . $sql);
     $st->execute($a);
     $total = (int)$st->fetchColumn();
+    // 0件なら、つながった語を分類名・メーカー名で分けて探し直す（「エアレス塗装機」→「エアレス」「塗装機」・2026-11-27）
+    if ($total === 0 && $terms) {
+        $split = kv_search_split($terms);
+        if ($split !== $terms) {
+            [$w2, $a2] = kv_search_where($split, $base_w, $base_a);
+            $sql2 = 'FROM products WHERE ' . implode(' AND ', $w2);
+            $st = kv_db()->prepare('SELECT COUNT(*) ' . $sql2);
+            $st->execute($a2);
+            $t2 = (int)$st->fetchColumn();
+            if ($t2 > 0) { $sql = $sql2; $a = $a2; $total = $t2; }
+        }
+    }
+    // それでも0件で語が2つ以上なら、いちばん絞り込める1語（当たる中で件数が最も少ない語）で探す
+    // （「ベビーカステラ 機械」→「ベビーカステラ」、「スプレーガン 塗装」→「スプレーガン」）
+    if ($total === 0 && count($terms) > 1) {
+        $best = null;
+        foreach (array_unique(array_merge($terms, kv_search_split($terms))) as $t) {
+            [$w3, $a3] = kv_search_where([$t], $base_w, $base_a);
+            $st = kv_db()->prepare('SELECT COUNT(*) FROM products WHERE ' . implode(' AND ', $w3));
+            $st->execute($a3);
+            $c3 = (int)$st->fetchColumn();
+            if ($c3 > 0 && ($best === null || $c3 < $best[0])) { $best = [$c3, $w3, $a3]; }
+        }
+        if ($best) { $total = $best[0]; $sql = 'FROM products WHERE ' . implode(' AND ', $best[1]); $a = $best[2]; }
+    }
     $page = max(1, $page);
     $off = ($page - 1) * $per;
     $st = kv_db()->prepare('SELECT id,name,model_number,price,list_price,stock,stock_unlimited,'
@@ -290,6 +307,75 @@ function kv_products(array $f = [], int $page = 1, int $per = 24): array
     $st->execute($a);
     return ['items' => $st->fetchAll(), 'total' => $total, 'page' => $page,
             'per' => $per, 'pages' => (int)ceil($total / $per)];
+}
+
+/**
+ * 検索語を分ける。全角・半角、英字の大小は区別しない。
+ * 「業務用」「通販」「価格」などは商品名にほとんど入らず、付けると目当ての商品まで落ちるので外す
+ * （ほかの語が残るときだけ。X-Direct の検索で「高圧洗浄機 業務用」「〇〇 価格」と打つ人がいる・2026-11-27）。
+ */
+function kv_search_terms(string $q): array
+{
+    $terms = array_values(array_filter(preg_split('/\s+/u', trim(kv_norm($q))) ?: [], 'strlen'));
+    $stop = ['業務用', '業務', '通販', '価格', '値段', '料金', '安い', '激安', '格安', '最安', '最安値', '購入', '販売', '通信販売', 'おすすめ', '人気', '新品', '正規品', 'ネット', 'の'];
+    $kept = array_values(array_filter($terms, static fn($t) => !in_array($t, $stop, true)));
+    if (!$kept) { return array_slice($terms, 0, 5); }
+    // 語の後ろに付いた「業務用」「通販」も外す（「洗浄機業務用」→「洗浄機」）
+    $kept = array_map(static fn($t) => preg_replace('/(業務用|通販|の通販|価格)$/u', '', $t) ?: $t, $kept);
+    // 検索する人の言い方 → 商品名での言い方（商品名に出てこない言い方で0件になっていたもの）
+    $syn = ['ワッフルメーカー' => 'ワッフル', 'たい焼き器' => 'たい焼', 'たいやき器' => 'たい焼', 'たこ焼き器' => 'たこ焼', 'たこ焼器' => 'たこ焼',
+            '芯取り' => '芯抜き', '芯とり' => '芯抜き', 'たまねぎ' => '玉ねぎ', 'タマネギ' => '玉ねぎ', '玉葱' => '玉ねぎ',
+            'スプレイガン' => 'スプレーガン', 'ジェネレーター' => '発電機', 'エアコンプレッサー' => 'コンプレッサー'];
+    $kept = array_map(static fn($t) => $syn[$t] ?? $t, $kept);
+    return array_slice($kept, 0, 5);
+}
+
+/** 検索語ごとに、商品名・型番・JAN・分類名・メーカー名のどれかに含むものを探す条件を作る。 */
+function kv_search_where(array $terms, array $w, array $a): array
+{
+    $useFn = method_exists(kv_db(), 'sqliteCreateFunction');
+    $n = static fn(string $col) => $useFn ? "kvnorm($col)" : $col;
+    foreach ($terms as $t) {
+        $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $t) . '%';
+        // JAN（gtin）でも引けるようにする（2026-11-17）。分類名・メーカー名でも引く（「ベビコン 日立」「塗装機 精和」・2026-11-27）
+        $w[] = '(' . $n('name') . " LIKE ? ESCAPE '\\' OR " . $n('model_number') . " LIKE ? ESCAPE '\\' OR gtin LIKE ? ESCAPE '\\'"
+             . ' OR category_id IN (SELECT id FROM categories WHERE ' . $n('name') . " LIKE ? ESCAPE '\\')"
+             . ' OR maker_id IN (SELECT id FROM makers WHERE ' . $n('name') . " LIKE ? ESCAPE '\\'))";
+        array_push($a, $like, $like, $like, $like, $like);
+    }
+    return [$w, $a];
+}
+
+/**
+ * つながった語を、分類名・メーカー名の言葉で分ける（「エアレス塗装機」→「エアレス」「塗装機」）。
+ * 言葉の辞書は分類名（「切断・切削・曲げ」は「・」で分ける）とメーカー名の2文字以上。長い言葉から先に当てる。
+ */
+function kv_search_split(array $terms): array
+{
+    static $dict = null;
+    if ($dict === null) {
+        $dict = [];
+        foreach (kv_db()->query('SELECT name FROM categories UNION SELECT name FROM makers') as $r) {
+            foreach (preg_split('/[・\/／()（）\s]+/u', kv_norm((string)$r['name'])) ?: [] as $wd) {
+                if (mb_strlen($wd) >= 2) { $dict[$wd] = true; }
+            }
+        }
+        $dict = array_keys($dict);
+        usort($dict, static fn($x, $y) => mb_strlen($y) - mb_strlen($x));
+    }
+    $out = [];
+    foreach ($terms as $t) {
+        $done = false;
+        foreach ($dict as $wd) {
+            $p = mb_strpos($t, $wd);
+            if ($p === false || $wd === $t) { continue; }
+            $before = mb_substr($t, 0, $p); $after = mb_substr($t, $p + mb_strlen($wd));
+            foreach ([$before, $wd, $after] as $piece) { if (mb_strlen($piece) >= 2) { $out[] = $piece; } }
+            $done = true; break;
+        }
+        if (!$done) { $out[] = $t; }
+    }
+    return array_slice(array_values(array_unique($out)), 0, 5);
 }
 
 /** 取り扱い終了の商品から、同じメーカー・同じカテゴリの現行商品を薦める。 */
