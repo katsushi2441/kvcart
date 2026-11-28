@@ -184,6 +184,19 @@ function kv_page_top(): void
        . '<a class="xlink" href="https://kurage.exbridge.jp/#ref=exdirect-aiteam" rel="noopener" target="_blank">Kurage を見る</a>'
        . '</div>'
        . '</div>'
+       . '</section>'
+       // AIシステム基盤の提案（2026-11-28 ユーザー指示「exdirect.net にも AIシステム基盤の PDF を」）。
+       // このお店がその実例なので、それを入口にして AI-IT顧問契約へ案内する。価格は書かない
+       . '<section class="aikiban" style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start;margin:18px 0;padding:16px;border:2px solid #0a8f85;border-radius:14px;background:#f2fbf9">'
+       . '<a href="https://exbridge.jp/pdf/ai-system-kiban.pdf#ref=exdirect-kiban" target="_blank" rel="noopener" style="flex:0 0 140px;display:block;border:1px solid #d5dee8;border-radius:8px;overflow:hidden;background:#fff">'
+       . '<img src="https://exbridge.jp/pdf/ai-system-kiban.png" alt="AIシステム基盤の説明資料（A4・1枚）" width="992" height="1404" style="width:100%;height:auto;display:block"></a>'
+       . '<div style="flex:1 1 280px;min-width:0">'
+       . '<p style="margin:0 0 4px;font-size:12px;font-weight:800;letter-spacing:.08em;color:#0a8f85">業務のAI化をお考えの会社さまへ</p>'
+       . '<h2 style="margin:0 0 8px;font-size:19px;line-height:1.45">このお店は「AIシステム基盤」で動いています</h2>'
+       . '<p style="margin:0 0 12px;line-height:1.85">X-Direct の受注・仕入先への発注・お客様へのご連絡・商品登録は、AIが業務システムを直接操作して進めています。Copilot・Gemini・ChatGPT を入れただけでは、ここまでの自動化はできません。同じ土台を、AI-IT顧問契約の中で、御社の業務に合わせて作れます。</p>'
+       . '<p style="margin:0"><a href="https://exbridge.jp/pdf/ai-system-kiban.pdf#ref=exdirect-kiban" target="_blank" rel="noopener" style="display:inline-block;margin:0 8px 8px 0;padding:10px 14px;border-radius:10px;background:#0a8f85;color:#fff;font-weight:700;text-decoration:none">資料をPDFで開く（A4・1枚）</a>'
+       . '<a href="https://exbridge.jp/ai-it-komon.html#ref=exdirect-kiban" target="_blank" rel="noopener" style="display:inline-block;padding:8px 12px;border-radius:10px;border:2px solid #0a8f85;color:#0a8f85;background:#fff;font-weight:700;text-decoration:none">AI-IT顧問契約を見る</a></p>'
+       . '</div>'
        . '</section>';
     } else {
         echo '<h1>' . kv_e(kv_shop('name')) . '</h1><p class="src">' . kv_e(kv_shop('tagline')) . '　／　取扱 '
