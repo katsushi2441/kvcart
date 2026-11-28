@@ -19,6 +19,7 @@ REPO = "/home/kojima/work/kvcart"
 ap = argparse.ArgumentParser()
 ap.add_argument("--tag", required=True)
 ap.add_argument("--db-backup", action="store_true")
+ap.add_argument("--base", default="HEAD", help="本番がこの版と同じときだけ置く（commit したあとに置くときは HEAD~1 など）")
 ap.add_argument("files", nargs="+")
 a = ap.parse_args()
 day = datetime.datetime.now().strftime("%Y%m%d")
@@ -35,10 +36,10 @@ def get(name):
 
 server = {}
 for fn in a.files:
-    head = subprocess.run(["git", "-C", REPO, "show", "HEAD:public/" + fn], capture_output=True).stdout
+    head = subprocess.run(["git", "-C", REPO, "show", a.base + ":public/" + fn], capture_output=True).stdout
     server[fn] = get(fn)
     same = md5(server[fn]) == md5(head)
-    print(f"{fn}: 本番と HEAD {'同じ' if same else 'ちがう'}")
+    print(f"{fn}: 本番と {a.base} {'同じ' if same else 'ちがう'}")
     if not same:
         print("本番だけ直されているので置かない"); f.quit(); sys.exit(3)
 
