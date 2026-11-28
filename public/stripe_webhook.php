@@ -11,6 +11,11 @@ require __DIR__ . '/kv_shop.php';
 require __DIR__ . '/kv_lib.php';
 require __DIR__ . '/kv_order.php';
 require __DIR__ . '/kv_stripe.php';
+// 期限切れの案内メール（kv_pending_abandon_mail・2026-11-28）が、正本のURL（kv_ui.php）・カート（kv_cart.php）・会員の値引き（kv_member.php）を使う
+require_once __DIR__ . '/kv_session.php';
+require_once __DIR__ . '/kv_ui.php';
+require_once __DIR__ . '/kv_cart.php';
+if (is_file(__DIR__ . '/kv_member.php')) { require_once __DIR__ . '/kv_member.php'; }
 
 header('Content-Type: text/plain; charset=utf-8');
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); echo 'POST only'; exit; }
