@@ -840,7 +840,9 @@ function kv_page_cart_resume(): void
         $st->execute([$tok]);
         $pc = $st->fetch() ?: null;
     }
-    $fresh = $pc && strtotime((string)$pc['created_at']) >= time() - KV_PENDING_RESUME_DAYS * 86400;
+    // 有効期間は、決済画面を作った時か案内メールを送った時の遅い方から数える（あとから案内を送ったお客様も使えるように）
+    $from = $pc ? max(strtotime((string)$pc['created_at']), strtotime((string)($pc['mailed_at'] ?? '')) ?: 0) : 0;
+    $fresh = $pc && $from >= time() - KV_PENDING_RESUME_DAYS * 86400;
     if (!$pc || !$fresh || (int)$pc['order_id'] > 0) {
         header('Location: ' . kv_url('cart'));
         return;
