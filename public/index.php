@@ -86,6 +86,7 @@ function kv_route(string $path, int $page): void
         case '/cart/confirm':  kv_page_confirm(); return;    // STEP 3 確認
         case '/cart/complete': kv_page_complete(); return;   // STEP 4 完了
         case '/cart/pay':      kv_page_pay(); return;        // カード決済のやり直し
+        case '/cart/resume':   kv_page_cart_resume(); return;   // 決済画面の期限切れメールの再開リンク（kv_stripe.php・2026-11-28）
         case '/member':        kv_page_member(); return;     // マイページ（kv_member.php・2026-11-22）
         case '/member/login':
         case '/member-login':  kv_page_member_login(); return;   // /member-login はおちゃのこネット時代の会員ログインのURL

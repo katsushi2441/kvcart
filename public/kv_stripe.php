@@ -283,6 +283,9 @@ function kv_stripe_handle(array $ev): string
             $oid = kv_pending_finalize((int)$obj['metadata']['kv_pending_id'], $obj);
             return $oid ? 'paid: order ' . $oid : 'pending: not paid';
         }
+        if (($ev['type'] ?? '') === 'checkout.session.expired') {
+            return kv_pending_abandon_mail((int)$obj['metadata']['kv_pending_id']);
+        }
         return 'ignored: pending ' . ($ev['type'] ?? '');
     }
     $oid = (int)($obj['metadata']['kv_order_id'] ?? 0);
@@ -648,6 +651,8 @@ function kv_stripe_checkout_pending(array $cart, array $post): array
                                   // カードを預かる（2026-11-24）。あとで店側から off_session で決済し直せるようにする
                                   'setup_future_usage' => 'off_session'],
         'payment_method_options' => ['card' => ['request_three_d_secure' => 'any']],
+        // 決済画面の期限（2026-11-28）。期限が切れたら webhook の checkout.session.expired で案内メールを1通送る
+        'expires_at' => time() + KV_PENDING_EXPIRE_MIN * 60,
         'success_url' => $base . '/cart/complete?pc=' . $token,
         'cancel_url' => $base . '/cart/confirm?canceled=1',
         'integration_identifier' => 'kvcart-checkout-' . $letters,
@@ -706,4 +711,148 @@ function kv_pending_finalize(int $pid, ?array $session = null): int
     }
     kv_mail_send($oid, 'order_paid_card');
     return $oid;
+}
+
+/*
+ * 決済画面で支払わずに終わったお客様への案内（2026-11-28 ユーザー指示）。
+ * 11/18 にカードの決済画面から戻って注文をやり直したお客様がいた・142,931円の決済画面が期限切れのまま終わっていた。
+ * 決済画面の期限（KV_PENDING_EXPIRE_MIN 分）が切れたら、Stripe の checkout.session.expired で1通だけ送る:
+ *   - 入力した内容のまま手続きを再開できるリンク（/cart/resume?pc=…・7日間）
+ *   - 銀行振込なら特別価格（税別10万円以上は値引きの見積書／会員の銀行振込2%引き）の案内
+ * 送らないとき: 決済済み・すでに同じメールアドレスで注文がある（別の方法で注文し直した）・メールアドレスが無い。
+ * Cc は店のアドレス（kv_shop('email')）。送った全文は pending_checkouts.mail_body に残す。
+ */
+const KV_PENDING_EXPIRE_MIN = 120;     // 決済画面の期限（Stripe は30分〜24時間）
+const KV_PENDING_RESUME_DAYS = 7;      // 再開リンクの有効期間
+
+function kv_pending_schema2(): void
+{
+    kv_pending_schema();
+    $cols = array_column(kv_db()->query('PRAGMA table_info(pending_checkouts)')->fetchAll(), 'name');
+    foreach (['mailed_at' => 'TEXT', 'mail_body' => 'TEXT', 'mail_note' => 'TEXT'] as $c => $t) {
+        if (!in_array($c, $cols, true)) { kv_db()->exec("ALTER TABLE pending_checkouts ADD COLUMN $c $t"); }
+    }
+}
+
+/** 「銀行振込なら特別価格」の段落。今ある決まり（キャンペーンの帯・会員の2%引き）の範囲だけを書く。 */
+function kv_pending_bank_offer(array $cart): string
+{
+    if (!kv_is_xdirect()) { return ''; }
+    $sub = (int)($cart['subtotal'] ?? 0);
+    if ($sub >= 100000) {
+        return "【銀行振込なら特別価格】\n"
+             . "ご注文の商品代金が税別10万円以上のため、お支払いを銀行振込にしていただくと、特別値引きをしたお見積書をご提案します。\n"
+             . "このメールにご返信いただければ、お見積書をお送りします。";
+    }
+    if (function_exists('kv_member_campaign_active') && kv_member_campaign_active() && !empty($cart['lines'])) {
+        $disc = (int)floor(kv_member_campaign_base($cart) * KV_MEMBER_CAMPAIGN_RATE);
+        if ($disc > 0) {
+            return "【銀行振込なら特別価格】\n"
+                 . "会員登録（無料）をして銀行振込でご注文いただくと、商品代金（税別）から2%を値引きします（" . kv_member_campaign_end_label() . "まで）。\n"
+                 . "今回のご注文では、" . number_format($disc) . "円（税別）の値引きになります。\n"
+                 . "下のリンクから手続きを再開し、「会員登録する」にチェックを入れ、お支払い方法で銀行振込をお選びください。";
+        }
+    }
+    return "【銀行振込でも承ります】\n下のリンクから手続きを再開し、お支払い方法で銀行振込をお選びいただけます。";
+}
+
+function kv_pending_abandon_body(array $pc, array $cart, array $post): array
+{
+    $items = '';
+    foreach (($cart['lines'] ?? []) as $l) {
+        $p = $l['product'];
+        $nm = $p['name'] . (!empty($l['opt']) ? '（' . $l['opt'] . '）' : '');
+        $items .= sprintf("%s × %d = %s円\n", $nm, (int)$l['qty'], number_format((int)$l['amount']));
+    }
+    $items .= sprintf("\n小計 %s円 / 消費税 %s円 / 合計 %s円（税込）", number_format((int)$cart['subtotal']),
+                      number_format((int)$cart['tax']), number_format((int)$cart['total']));
+    $base = kv_base_url();   // webhook から呼ばれるので、開かれたドメインではなく正本の起点で作る
+    [$subj, $body] = kv_mail_template('checkout_abandoned');
+    $map = [
+        '{name}' => trim((string)($post['name'] ?? '')) ?: 'お客様',
+        '{at}' => date('n月j日 G:i', strtotime((string)$pc['created_at'])),
+        '{items}' => $items,
+        '{bank_offer}' => kv_pending_bank_offer($cart),
+        '{resume_url}' => $base . '/cart/resume?pc=' . $pc['token'],
+        '{resume_days}' => (string)KV_PENDING_RESUME_DAYS,
+        '{shop_name}' => kv_shop('name'),
+        '{shop}' => kv_shop('name') . '（' . kv_shop('company') . '）',
+        '{email}' => kv_shop('email'),
+    ];
+    $body = strtr($body, $map);
+    $footer = trim(kv_shop('mail_footer'));
+    if ($footer !== '') { $body = rtrim($body) . "\n\n" . $footer . "\n"; }
+    return [kv_mail_subject(strtr($subj, $map)), $body];
+}
+
+/** 決済画面の期限切れで1通だけ送る。返り値は webhook の応答（記録用）。 */
+function kv_pending_abandon_mail(int $pid, bool $dry = false): string
+{
+    kv_pending_schema2();
+    $db = kv_db();
+    $st = $db->prepare('SELECT * FROM pending_checkouts WHERE id=?');
+    $st->execute([$pid]);
+    $pc = $st->fetch();
+    if (!$pc) { return 'abandon: no pending'; }
+    if ((int)$pc['order_id'] > 0 || $pc['status'] !== 'open') { return 'abandon: skip status ' . $pc['status']; }
+    if (!empty($pc['mailed_at'])) { return 'abandon: already mailed'; }
+    $cart = json_decode((string)$pc['cart'], true) ?: [];
+    $post = json_decode((string)$pc['post'], true) ?: [];
+    $to = trim((string)($post['email'] ?? ''));
+    $note = function (string $n) use ($db, $pid, $dry) {
+        if (!$dry) { $db->prepare("UPDATE pending_checkouts SET status='expired', mail_note=? WHERE id=? AND status='open'")->execute([$n, $pid]); }
+        return 'abandon: ' . $n;
+    };
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) { return $note('no email'); }
+    // 別の方法（銀行振込・カードのやり直し）で注文し直していれば送らない
+    $o = $db->prepare('SELECT COUNT(*) FROM orders WHERE lower(email)=lower(?) AND created_at>=? AND cancelled=0');
+    $o->execute([$to, $pc['created_at']]);
+    if ((int)$o->fetchColumn() > 0) { return $note('ordered again'); }
+    // Stripe でも払われていないことを確かめる（期限切れの通知の中身は信じない）
+    if ((string)$pc['session_id'] !== '' && !$dry) {
+        $s = kv_stripe_call('GET', '/checkout/sessions/' . rawurlencode((string)$pc['session_id']));
+        if (($s['status'] ?? '') !== 'expired' || in_array($s['payment_status'] ?? '', ['paid', 'no_payment_required'], true)) {
+            return 'abandon: session ' . ($s['status'] ?? '?') . '/' . ($s['payment_status'] ?? '?');
+        }
+    }
+    [$subj, $body] = kv_pending_abandon_body($pc, $cart, $post);
+    if ($dry) { return $subj . "\n\n" . $body; }
+    // 二重送信しない（mailed_at を先に取れた方だけが送る）
+    $u = $db->prepare("UPDATE pending_checkouts SET status='expired', mailed_at=?, mail_body=? WHERE id=? AND status='open' AND mailed_at IS NULL");
+    $u->execute([date('Y-m-d H:i:s'), $subj . "\n\n" . $body, $pid]);
+    if ($u->rowCount() !== 1) { return 'abandon: taken'; }
+    $from = kv_shop('email');
+    $h = "From: " . mb_encode_mimeheader(kv_shop('name')) . " <$from>\r\nReply-To: $from\r\nContent-Type: text/plain; charset=UTF-8\r\n";
+    $ok = kv_mail($to, mb_encode_mimeheader($subj), $body, $h, $from);
+    $db->prepare('UPDATE pending_checkouts SET mail_note=? WHERE id=?')->execute([$ok ? 'sent' : 'send failed', $pid]);
+    return 'abandon: ' . ($ok ? 'mailed' : 'send failed');
+}
+
+/** メールの再開リンク。入力した内容とカートを戻して、お客様情報の画面（会員登録の欄がある）から続けてもらう。 */
+function kv_page_cart_resume(): void
+{
+    kv_session();
+    kv_pending_schema2();
+    $tok = (string)($_GET['pc'] ?? '');
+    $pc = null;
+    if (preg_match('/^[0-9a-f]{24}$/', $tok)) {
+        $st = kv_db()->prepare('SELECT * FROM pending_checkouts WHERE token=?');
+        $st->execute([$tok]);
+        $pc = $st->fetch() ?: null;
+    }
+    $fresh = $pc && strtotime((string)$pc['created_at']) >= time() - KV_PENDING_RESUME_DAYS * 86400;
+    if (!$pc || !$fresh || (int)$pc['order_id'] > 0) {
+        header('Location: ' . kv_url('cart'));
+        return;
+    }
+    $cart = json_decode((string)$pc['cart'], true) ?: [];
+    $post = json_decode((string)$pc['post'], true) ?: [];
+    $c = [];
+    foreach (($cart['lines'] ?? []) as $l) {
+        if (isset($l['key'])) { $c[(string)$l['key']] = max(1, (int)$l['qty']); }
+    }
+    kv_cart_set($c);
+    unset($post['payment'], $post['_card_paid']);   // お支払い方法は選び直してもらう
+    $_SESSION['checkout'] = $post;
+    header('Location: ' . kv_url('cart/customer'));
 }
